@@ -41,6 +41,32 @@ function ConvertTo-PitrSafeRelativePath {
     return $value
 }
 
+function Test-PitrAdvancedRelativePath {
+    # Application data. The backup records it, but restoring it into a running profile
+    # needs explicit consent, so both engines must agree on what it is.
+    param([string]$RelativePath)
+    $value = ([string]$RelativePath).Replace('\','/')
+    foreach ($component in $value.Split('/')) { if ($component -eq 'AppData') { return $true } }
+    return $false
+}
+
+function Test-PitrSensitiveRelativePath {
+    # Content that must not be dropped into a live profile automatically: executables,
+    # scripts, shortcuts, startup entries, registry hives and the system hive folder.
+    param([string]$RelativePath)
+    $value = ([string]$RelativePath).Replace('\','/')
+    $leaf = $value.Split('/')[-1]
+    $name = $leaf.ToLowerInvariant()
+    foreach ($extension in @('.exe','.dll','.scr','.sys','.com','.pif','.bat','.cmd','.ps1','.psm1','.vbs','.vbe','.js','.jse','.wsf','.wsh','.hta','.lnk','.url','.msi','.msp','.reg','.jar')) {
+        if ($name.EndsWith($extension)) { return $true }
+    }
+    $normalized = $value.ToLowerInvariant()
+    foreach ($marker in @('start menu/programs/startup','windows/system32/config','ntuser.dat','ntuser.pol','usrclass.dat')) {
+        if ($normalized.Contains($marker)) { return $true }
+    }
+    return $false
+}
+
 function Get-PitrManifestProperty {
     param($Object,[string]$Name)
     if ($null -eq $Object) { throw ('Manifest is missing the ' + $Name + ' object.') }
@@ -172,14 +198,30 @@ function Set-PitrManifestState {
     )
     if (-not (Test-PitrManifestState $State)) { throw ('Unknown manifest state: ' + $State) }
     $current = [string]$Manifest.State
-    if ($script:PitrManifestTerminalStates -contains $current -and $current -ne $State) {
-        throw ('Manifest state ' + $current + ' is terminal; it cannot become ' + $State + '.')
+    if ($current -eq $State) { return $Manifest }
+    if ($script:PitrManifestTerminalStates -contains $current) {
+        # A finished generation may still be verified again, and a pass may find that the
+        # payload changed since - which has to be able to degrade the recorded state. What
+        # it may never do is start copying again or return to a planning state.
+        $allowed = @{
+            'Verified' = @('Verifying','CompletedWithWarnings','Failed')
+            'Failed'   = @('Verifying')
+        }
+        if (-not ($allowed.ContainsKey($current) -and ($allowed[$current] -contains $State))) {
+            throw ('Manifest state ' + $current + ' is terminal; it cannot become ' + $State + '.')
+        }
     }
     # An ordered lifecycle: the strongest success states are reachable only through
     # the work that earns them, so a plan or an interrupted run can never look complete.
     $required = @{
         'CopyCompleted' = @('Running','Interrupted')
-        'Verifying'     = @('CopyCompleted')
+        # Verification may be repeated, including on an already Verified generation: a
+        # backup must always be re-checkable, otherwise a payload that degraded later
+        # would keep claiming Verified forever.
+        # Verification may be repeated, including on an already Verified generation or one
+        # that a previous pass had to degrade: a backup must always be re-checkable, otherwise
+        # a payload that degraded later would keep claiming Verified forever.
+        'Verifying'     = @('CopyCompleted','Verified','CompletedWithWarnings')
         'Verified'      = @('Verifying')
     }
     if ($required.ContainsKey($State) -and ($required[$State] -notcontains $current)) {
@@ -187,7 +229,7 @@ function Set-PitrManifestState {
     }
     if ($State -eq 'Planned') { throw 'Manifest cannot return to Planned.' }
     if ($State -eq 'Running' -and $current -notin @('Planned','Interrupted')) { throw ('Manifest state cannot go from ' + $current + ' to Running.') }
-    if ($State -eq 'CompletedWithWarnings' -and $current -ne 'Verifying') { throw ('CompletedWithWarnings requires a completed verification; current state is ' + $current + '.') }
+    if ($State -eq 'CompletedWithWarnings' -and $current -notin @('Verifying','Verified')) { throw ('CompletedWithWarnings requires a completed verification; current state is ' + $current + '.') }
     $Manifest.State = $State
     if ($State -in @('Verified','CompletedWithWarnings','Failed')) {
         $Manifest.CompletedUtc = (Get-Date).ToUniversalTime().ToString('o')

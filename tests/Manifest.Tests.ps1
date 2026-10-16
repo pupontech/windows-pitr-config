@@ -37,7 +37,11 @@ try {
     $manifest=Set-PitrManifestState -Manifest $manifest -State 'Verifying'
     $manifest=Set-PitrManifestState -Manifest $manifest -State 'Verified'
     Assert-True ($manifest.State -eq 'Verified') 'full ordered path reaches Verified'
-    Assert-Throws { Set-PitrManifestState -Manifest $manifest -State 'Running' } 'Verified is terminal'
+    Assert-Throws { Set-PitrManifestState -Manifest $manifest -State 'Running' } 'a Verified generation cannot restart copying'
+    $reverifiable=Set-PitrManifestState -Manifest $manifest -State 'Verifying'
+    Assert-True ($reverifiable.State -eq 'Verifying') 'a Verified generation can be verified again'
+    $reverifiable=Set-PitrManifestState -Manifest $reverifiable -State 'CompletedWithWarnings'
+    Assert-True ($reverifiable.State -eq 'CompletedWithWarnings') 're-verification that finds damage degrades the state honestly'
 
     # Strongest status is refused while anything is unaccounted for.
     $warned=New-PitrManifest -BackupId ([guid]::NewGuid().ToString()) -Scope 'Complete'
