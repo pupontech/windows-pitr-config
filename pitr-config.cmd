@@ -35,6 +35,9 @@ rem  explicitly instead of relying on the console code page.
 rem ===========================================================================
 setlocal
 
+if /i "%~1"=="backup" goto :backuprecovery
+if /i "%~1"=="recover" goto :backuprecovery
+if /i "%~1"=="--help" goto :backuprecovery
 if /i "%~1"=="selftest" goto :selftest
 if /i "%~1"=="apply"    goto :apply
 if /i "%~1"=="snapshot"  goto :snapshot
@@ -130,6 +133,12 @@ rem  Eingabeaufforderung.
 :idle
 set "PITR_SELF=%~f0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Idle"
+exit /b %errorlevel%
+
+:backuprecovery
+rem New unattended CLI never elevates or interpolates arguments into PowerShell code.
+set "PITR_BACKUP_ENTRY=%~dp0src\backup\Entry.ps1"
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%PITR_BACKUP_ENTRY%" %*
 exit /b %errorlevel%
 
 #___PSCODE___
@@ -229,6 +238,11 @@ $LangText = @{
 
 # ----------------------------------------------------------------- English --
 en = @{
+    backupSection = 'Backup & Recovery'
+    backupBefore = 'Backup Before Restore'
+    backupVerify = 'Verify Existing Backup'
+    backupRecover = 'Compare & Recover'
+    backupOpen = 'Open Backup Folder'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'PITR'
@@ -399,6 +413,11 @@ en = @{
 # The German subtitle deliberately names the English original - that is what Microsoft's
 # documentation is filed under.
 de = @{
+    backupSection = 'Sicherung und Wiederherstellung'
+    backupBefore = 'Vor der Wiederherstellung sichern'
+    backupVerify = 'Vorhandene Sicherung prüfen'
+    backupRecover = 'Vergleichen und wiederherstellen'
+    backupOpen = 'Sicherungsordner öffnen'
     winTitle   = 'Zeitpunktwiederherstellung (Point-in-time restore)'
     headline   = 'Zeitpunktwiederherstellung'
     subtitle   = 'Point-in-time restore (PITR)'
@@ -567,6 +586,11 @@ de = @{
 
 # ------------------------------------------------------------------ Dutch --
 nl = @{
+    backupSection = 'Back-up en herstel'
+    backupBefore = 'Back-up vóór herstel'
+    backupVerify = 'Bestaande back-up controleren'
+    backupRecover = 'Vergelijken en herstellen'
+    backupOpen = 'Back-upmap openen'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Herstel naar een tijdstip (PITR)'
@@ -739,6 +763,11 @@ nl = @{
 # PowerShell 5.1 treats the curly quote as a string delimiter just like the straight one,
 # so a single U+2019 silently ends the string and the whole file stops parsing.
 fr = @{
+    backupSection = 'Sauvegarde et récupération'
+    backupBefore = 'Sauvegarder avant la restauration'
+    backupVerify = 'Vérifier une sauvegarde'
+    backupRecover = 'Comparer et récupérer'
+    backupOpen = 'Ouvrir le dossier de sauvegarde'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Restauration à un instant donné (PITR)'
@@ -907,6 +936,11 @@ fr = @{
 
 # ----------------------------------------------------------------- Spanish --
 es = @{
+    backupSection = 'Copia de seguridad y recuperación'
+    backupBefore = 'Copia antes de restaurar'
+    backupVerify = 'Verificar copia existente'
+    backupRecover = 'Comparar y recuperar'
+    backupOpen = 'Abrir carpeta de copia'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Restauración a un momento anterior (PITR)'
@@ -1075,6 +1109,11 @@ es = @{
 
 # -------------------------------------------------------------- Portuguese --
 pt = @{
+    backupSection = 'Backup e recuperação'
+    backupBefore = 'Backup antes de restaurar'
+    backupVerify = 'Verificar backup existente'
+    backupRecover = 'Comparar e recuperar'
+    backupOpen = 'Abrir pasta de backup'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Restauração para um ponto no tempo (PITR)'
@@ -1244,6 +1283,11 @@ pt = @{
 # ----------------------------------------------------------------- Italian --
 # Apostrophes here are plain ASCII and doubled - see the note on the French block.
 it = @{
+    backupSection = 'Backup e recupero'
+    backupBefore = 'Backup prima del ripristino'
+    backupVerify = 'Verifica backup esistente'
+    backupRecover = 'Confronto e recupero'
+    backupOpen = 'Apri cartella di backup'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Ripristino a un punto nel tempo (PITR)'
@@ -1415,6 +1459,11 @@ it = @{
 # ist unveraenderlich und in Windows selbst ueblich, damit stimmt jede Zahl. Bei
 # Tagen genuegen zwei Formen, dzien und dni, die decken alles ab.
 pl = @{
+    backupSection = 'Kopia zapasowa i odzyskiwanie'
+    backupBefore = 'Kopia przed przywracaniem'
+    backupVerify = 'Sprawdź istniejącą kopię'
+    backupRecover = 'Porównaj i odzyskaj'
+    backupOpen = 'Otwórz folder kopii'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Przywracanie do punktu w czasie (PITR)'
@@ -1583,6 +1632,11 @@ pl = @{
 
 # ------------------------------------------------------------------ Czech --
 cs = @{
+    backupSection = 'Záloha a obnova'
+    backupBefore = 'Záloha před obnovením'
+    backupVerify = 'Ověřit existující zálohu'
+    backupRecover = 'Porovnat a obnovit'
+    backupOpen = 'Otevřít složku zálohy'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Obnovení k určitému okamžiku (PITR)'
@@ -1751,6 +1805,11 @@ cs = @{
 
 # ---------------------------------------------------------------- Ukrainian --
 uk = @{
+    backupSection = 'Резервування та відновлення'
+    backupBefore = 'Копія перед відновленням'
+    backupVerify = 'Перевірити резервну копію'
+    backupRecover = 'Порівняти та відновити'
+    backupOpen = 'Відкрити папку копії'
     winTitle   = 'Point-in-time restore'
     headline   = 'Point-in-time restore'
     subtitle   = 'Відновлення на момент часу (PITR)'
@@ -2755,6 +2814,15 @@ $xaml = @'
       </StackPanel>
     </Grid>
 
+    <GroupBox x:Name="GrpBackup" Padding="8" Margin="0,0,0,10">
+      <WrapPanel>
+        <Button x:Name="BtnBackupBefore" Padding="10,4" Margin="0,0,6,4"/>
+        <Button x:Name="BtnBackupVerify" Padding="10,4" Margin="0,0,6,4"/>
+        <Button x:Name="BtnBackupRecover" Padding="10,4" Margin="0,0,6,4"/>
+        <Button x:Name="BtnBackupOpen" Padding="10,4" Margin="0,0,6,4"/>
+      </WrapPanel>
+    </GroupBox>
+
     <GroupBox x:Name="GrpLog" Padding="6">
       <StackPanel>
         <TextBox x:Name="TxtLog" IsReadOnly="True" TextWrapping="Wrap"
@@ -2929,6 +2997,11 @@ function Build-Choices {
 }
 
 function Apply-Language {
+    $ctl.GrpBackup.Header = T 'backupSection'
+    $ctl.BtnBackupBefore.Content = T 'backupBefore'
+    $ctl.BtnBackupVerify.Content = T 'backupVerify'
+    $ctl.BtnBackupRecover.Content = T 'backupRecover'
+    $ctl.BtnBackupOpen.Content = T 'backupOpen'
     $window.Title        = T 'winTitle'
     $ctl.TxtHead.Text    = T 'headline'
     $ctl.TxtSub.Text     = "$(T 'subtitle')  ·  Version $Version"
@@ -3643,7 +3716,8 @@ function Update-LogFit {
 function Set-Busy {
     param([bool]$On)
     $buttons = @('BtnSnapNow','BtnReset','BtnRefresh','BtnApply','BtnApplyNow','BtnWinRE','BtnCopy','BtnHist',
-                 'ChkAuto','CmbAutoDelay','BtnAutoUpd','BtnIdleChk') +
+                 'ChkAuto','CmbAutoDelay','BtnAutoUpd','BtnIdleChk',
+                 'BtnBackupBefore','BtnBackupVerify','BtnBackupRecover','BtnBackupOpen') +
                @($LangCodes | ForEach-Object { 'BtnLang' + $_.ToUpper() })
     foreach ($b in $buttons) { $ctl[$b].IsEnabled = -not $On }
     # Fehlt die Funktion im System, bleiben die schreibenden Bedienelemente aus - auch
@@ -3660,6 +3734,41 @@ function Set-Busy {
     $window.Cursor = if ($On) { [System.Windows.Input.Cursors]::Wait } else { $null }
     Update-Ui
 }
+
+# Backup code is loaded only on demand and resolves from this trusted application,
+# never from a profile or a user-selected backup directory.
+function Open-PitrBackupWindow {
+    param([ValidateSet('Backup','Verify','Recover')][string]$Mode)
+    Set-Busy $true
+    try {
+        if (-not $env:PITR_SELF) { throw 'Application location is unavailable.' }
+        $appRoot = Split-Path -Parent $env:PITR_SELF
+        foreach ($module in @('Platform','Manifest','Backup','Recovery','Localization','Ui')) {
+            $file = Join-Path $appRoot ('src\backup\' + $module + '.ps1')
+            if (-not [IO.File]::Exists($file)) { throw ('Portable backup package incomplete: ' + $module + '.ps1') }
+            . $file
+        }
+        Show-PitrBackupUi -Mode $Mode -ApplicationRoot $appRoot -Language $script:Lang
+    } catch { Write-Log "$(T 'logError'): $($_.Exception.Message)" }
+    finally { Set-Busy $false }
+}
+
+$ctl.BtnBackupBefore.Add_Click({ Open-PitrBackupWindow -Mode 'Backup' })
+$ctl.BtnBackupVerify.Add_Click({ Open-PitrBackupWindow -Mode 'Verify' })
+$ctl.BtnBackupRecover.Add_Click({ Open-PitrBackupWindow -Mode 'Recover' })
+$ctl.BtnBackupOpen.Add_Click({
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $browser = New-Object System.Windows.Forms.FolderBrowserDialog
+        $browser.Description = T 'backupOpen'
+        try {
+            if ($browser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                if (-not [IO.Directory]::Exists($browser.SelectedPath)) { throw 'Selected folder is unavailable.' }
+                Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $browser.SelectedPath + '"')
+            }
+        } finally { $browser.Dispose() }
+    } catch { Write-Log "$(T 'logError'): $($_.Exception.Message)" }
+})
 
 # --------------------------------------------------------------------- Events --
 function Set-Lang {

@@ -12,3 +12,7 @@ $RECYCLE.BIN/
 # Local scratch
 *.log
 *.tmp
+
+# Reproducible build output and local verification bookkeeping
+dist/
+.hermes/

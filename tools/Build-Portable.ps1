@@ -1,0 +1,58 @@
+[CmdletBinding()]
+param([string]$Root=(Split-Path $PSScriptRoot -Parent),[string]$OutDirectory)
+$ErrorActionPreference='Stop'
+$Root=[IO.Path]::GetFullPath($Root)
+if(-not $OutDirectory) { $OutDirectory=Join-Path $Root 'dist' }
+$OutDirectory=[IO.Path]::GetFullPath($OutDirectory)
+$required=@('pitr-config.cmd','pitr-backup.cmd','LICENSE','README.md','CHANGELOG.md')
+foreach($name in @('Platform','Manifest','Backup','Recovery','Ui','Localization','Cli','Entry')) { $required += 'src/backup/'+$name+'.ps1' }
+foreach($rel in $required) { if(-not [IO.File]::Exists((Join-Path $Root $rel))) { throw ('Portable application incomplete; missing '+$rel) } }
+$utf8=New-Object Text.UTF8Encoding($false,$true)
+$cmd=$utf8.GetString([IO.File]::ReadAllBytes((Join-Path $Root 'pitr-config.cmd')))
+$versionMatch=[regex]::Match($cmd,'\$Version\s*=\s*''([0-9A-Za-z.+-]+)''')
+if(-not $versionMatch.Success) { throw 'Could not determine application version.' }
+$version=$versionMatch.Groups[1].Value
+$files=New-Object 'Collections.Generic.SortedDictionary[string,byte[]]' ([StringComparer]::Ordinal)
+foreach($rel in $required) { $files.Add($rel,[IO.File]::ReadAllBytes((Join-Path $Root $rel))) }
+$guide=Join-Path $Root 'docs/guide.html'
+if([IO.File]::Exists($guide)) { $files.Add('guide.html',[IO.File]::ReadAllBytes($guide)) }
+$dev=Join-Path $Root 'docs/development'
+if([IO.Directory]::Exists($dev)) {
+    foreach($file in Get-ChildItem -LiteralPath $dev -File -Filter '*.md') { $files.Add('docs/development/'+$file.Name,[IO.File]::ReadAllBytes($file.FullName)) }
+}
+$inventory=New-Object 'Collections.Generic.List[object]'
+foreach($rel in @($files.Keys)) {
+    $bytes=$files[$rel]
+    if($rel -match '\.(ps1|cmd|bat)$') {
+        $text=$utf8.GetString($bytes).TrimStart([char]0xFEFF)
+        $text=$text.Replace("`r`n","`n").Replace("`r","`n").Replace("`n","`r`n")
+        $bytes=$utf8.GetBytes($text);$files[$rel]=$bytes
+    }
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { $hash=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
+    $inventory.Add([pscustomobject]@{Path=$rel;Length=$bytes.Length;Sha256=$hash})
+}
+$meta=[pscustomobject]@{SchemaVersion=1;ApplicationVersion=$version;Files=$inventory.ToArray();Note='Integrity inventory is not a digital signature. Preserve the trusted application source.'}
+$files.Add('package-integrity.json',$utf8.GetBytes(($meta | ConvertTo-Json -Depth 6)))
+$null=[IO.Directory]::CreateDirectory($OutDirectory)
+$temp=Join-Path $OutDirectory ('.building-'+[guid]::NewGuid().ToString('N')+'.zip')
+$final=Join-Path $OutDirectory ('windows-pitr-config-'+$version+'.zip')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+try {
+    $stream=New-Object IO.FileStream($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    $archive=New-Object IO.Compression.ZipArchive($stream,[IO.Compression.ZipArchiveMode]::Create,$false)
+    try {
+        foreach($rel in $files.Keys) {
+            $entry=$archive.CreateEntry($rel,[IO.Compression.CompressionLevel]::Optimal)
+            $entry.LastWriteTime=[DateTimeOffset]::new(2000,1,1,0,0,0,[TimeSpan]::Zero)
+            $entryStream=$entry.Open()
+            try { $bytes=$files[$rel];$entryStream.Write($bytes,0,$bytes.Length) } finally { $entryStream.Dispose() }
+        }
+    } finally { $archive.Dispose();$stream.Dispose() }
+    $hash=(Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
+    if([IO.File]::Exists($final)) {
+        if((Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Refusing to overwrite a different existing artifact. Use a new output directory or version.' }
+        [IO.File]::Delete($temp)
+    } else { [IO.File]::Move($temp,$final) }
+    [pscustomobject]@{Path=$final;Sha256=$hash;Bytes=([IO.FileInfo]$final).Length;Entries=$files.Count;Version=$version}
+} finally { if([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
