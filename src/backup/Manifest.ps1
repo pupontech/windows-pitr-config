@@ -239,8 +239,12 @@ function Write-PitrManifest {
     try {
         [IO.File]::WriteAllText($temporary, $json, $utf8)
         # Atomic replace where the filesystem supports it; never a truncate-in-place.
+        # A real backup path is passed rather than $null: PowerShell converts a null
+        # argument to an empty string, which File.Replace rejects.
         if ([IO.File]::Exists($ManifestPath)) {
-            [IO.File]::Replace($temporary, $ManifestPath, $null)
+            $aside = $ManifestPath + '.' + [guid]::NewGuid().ToString('N') + '.bak'
+            [IO.File]::Replace($temporary, $ManifestPath, $aside)
+            if ([IO.File]::Exists($aside)) { [IO.File]::Delete($aside) }
         } else {
             [IO.File]::Move($temporary, $ManifestPath)
         }

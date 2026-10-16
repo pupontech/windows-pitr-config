@@ -110,6 +110,16 @@ try {
     Assert-True ($stillGood.State -eq 'Planned') 'existing manifest still readable after a refused write'
     Assert-True (-not (Get-ChildItem -LiteralPath $temp -File | Where-Object { $_.Name -like '*.tmp' -or $_.Name -like '.*.tmp' })) 'no temporary files left after a refused write'
 
+    # Rewriting an existing manifest is the ordinary case during a backup (state and
+    # progress are persisted repeatedly), so the second write must work and must not
+    # leave the swap artifacts behind.
+    $again=Read-PitrManifest -ManifestPath $good
+    $again=Set-PitrManifestState -Manifest $again -State 'Running'
+    $null=Write-PitrManifest -ManifestPath $good -Manifest $again
+    $reread=Read-PitrManifest -ManifestPath $good
+    Assert-True ($reread.State -eq 'Running') 'a second write to an existing manifest path succeeds'
+    Assert-True (-not (Get-ChildItem -LiteralPath $temp -File | Where-Object { $_.Name -like '*.bak' -or $_.Name -like '*.tmp' })) 'the atomic swap leaves no backup or temporary files'
+
     Write-Output 'Manifest assertions passed.'
 } finally {
     if([IO.Directory]::Exists($temp)) { [IO.Directory]::Delete($temp,$true) }
