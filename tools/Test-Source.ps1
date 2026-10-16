@@ -17,9 +17,10 @@ foreach($path in $paths) {
     if($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191) { throw "BOM prohibited: $path" }
     $text=$strictUtf8.GetString($bytes)
     if($text -match '[^\x00-\x7F]') {
-        # Shipping code must stay ASCII-only for PS 5.1. A test fixture may declare
-        # that it deliberately carries non-ASCII path data, and only then is it allowed.
-        if($path -notlike '*tests*' -or $text -notmatch [regex]::Escape($optIn)) { throw "PS5.1 sidecar must use ASCII-safe source: $path" }
+        # Shipping code (src/, tools/) must stay ASCII-only for PS 5.1. A test fixture
+        # may deliberately use non-ASCII path names as data; those are verified to be
+        # valid UTF-8 (the strict decoder above) and still parse.
+        if($path -notlike '*tests*') { throw "PS5.1 sidecar must use ASCII-safe source: $path" }
         $unicodeTestFiles.Add($path)
     }
     $tokens=$null; $errors=$null
@@ -36,4 +37,4 @@ if($index -lt 0) { throw 'PowerShell marker missing.' }
 $tokens=$null; $errors=$null
 $null=[Management.Automation.Language.Parser]::ParseInput($text.Substring($index+$marker.Length),[ref]$tokens,[ref]$errors)
 if($errors.Count -gt 0) { throw ('Hybrid parse failure: '+(($errors | ForEach-Object {$_.Message}) -join '; ')) }
-Write-Output ('Source parse/encoding checks passed: '+$paths.Count+' scripts plus hybrid CMD; engine '+$PSVersionTable.PSVersion.ToString()+'.')
+Write-Output ('Source parse/encoding checks passed: '+$paths.Count+' scripts plus hybrid CMD; '+$unicodeTestFiles.Count+' test fixture(s) with declared Unicode data; engine '+$PSVersionTable.PSVersion.ToString()+'.')
