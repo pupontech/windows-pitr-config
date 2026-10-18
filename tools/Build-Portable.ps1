@@ -55,4 +55,12 @@ try {
         [IO.File]::Delete($temp)
     } else { [IO.File]::Move($temp,$final) }
     [pscustomobject]@{Path=$final;Sha256=$hash;Bytes=([IO.FileInfo]$final).Length;Entries=$files.Count;Version=$version}
-} finally { if([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
+} finally {
+    if([IO.File]::Exists($temp)) {
+        # A build must never leave a locked temporary archive behind: Windows PowerShell 5.1 can
+        # release the archive handle a moment after Dispose, so retry briefly before giving up.
+        for($attempt=0;$attempt -lt 20 -and [IO.File]::Exists($temp);$attempt++) {
+            try { [IO.File]::Delete($temp) } catch { [GC]::Collect(); [GC]::WaitForPendingFinalizers(); Start-Sleep -Milliseconds 150 }
+        }
+    }
+}

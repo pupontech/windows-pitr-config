@@ -38,5 +38,13 @@ try {
     Write-Output 'Source and reproducible portable-build assertions passed.'
 } finally {
     # Only this test-owned GUID fixture is removed; never source/user backup data.
-    [IO.Directory]::Delete($fixture,$true)
+    # Windows PowerShell 5.1 can still hold an archive handle for a moment, which must not turn a
+    # passing suite into a failure; retry, then report the leftover instead of throwing.
+    $removed=$false
+    for($attempt=0;$attempt -lt 20 -and -not $removed;$attempt++) {
+        try { [IO.Directory]::Delete($fixture,$true); $removed=$true } catch {
+            [GC]::Collect(); [GC]::WaitForPendingFinalizers(); Start-Sleep -Milliseconds 150
+        }
+    }
+    if(-not $removed) { Write-Warning ('Fixture could not be fully removed yet (a build artifact is still open): '+$fixture) }
 }
