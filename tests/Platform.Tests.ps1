@@ -272,16 +272,29 @@ Remove-Item Env:PITR_FORCE_WINDOWS_HOST -ErrorAction SilentlyContinue
 Remove-Item Env:PITR_VOLUME_IDENTITY_FIXTURE -ErrorAction SilentlyContinue
 Remove-Item Env:SystemRoot -ErrorAction SilentlyContinue
 
-# UNC path form is a Windows path syntax. On Linux, '\\server\share' is a relative POSIX name and
+# UNC path form is a Windows path syntax. On Linux, '\\\\server\\share' is a relative POSIX name and
 # cannot be classified as a network share, so the UNC assertions require a real Windows host.
-if(Assert-Skip $realWindows 'UNC/mapped-drive/SUBST/junction alias classification requires a real Windows host (pending real Windows CI)') {
-    $uncIdentity=Get-PitrVolumeIdentity -Path '\\server\share\PITR-Backups'
-    Assert-Equal 'Network' $uncIdentity.Kind 'UNC destination classified as Network'
-    Assert-Equal 'unc:server\share' $uncIdentity.VolumeId 'UNC identity is server/share based, not letter based'
-    Assert-True (@($uncIdentity.Warnings) -join ' ') -match 'credentials' 'network warning states that no credentials are used'
-    Assert-True (@($uncIdentity.Warnings) -join ' ') -match 'cannot be verified' 'network warning states that independence cannot be verified'
-    Assert-Rejected { Get-PitrVolumeIdentity -Path '\\localhost\c$\Users' } 'loopback share rejected as not independent' { Get-PitrVolumeIdentity -Path '\\server\share\PITR-Backups' }
-    Assert-Rejected { Get-PitrVolumeIdentity -Path '\\127.0.0.1\backup' } '127.0.0.1 share rejected as not independent' { Get-PitrVolumeIdentity -Path '\\server\share\PITR-Backups' }
+# A hosted runner has no SMB share, so an unreachable UNC destination must be refused fail-closed
+# rather than classified from a guess; that refusal is pinned on Windows and the classification
+# assertions run only when the name actually resolves.
+if($realWindows) {
+    $uncPath='\\server\share\PITR-Backups'
+    $uncIdentity=$null
+    $uncError=$null
+    try { $uncIdentity=Get-PitrVolumeIdentity -Path $uncPath } catch { $uncError=$_.Exception.Message }
+    if($null -ne $uncIdentity) {
+        Assert-Equal 'Network' $uncIdentity.Kind 'UNC destination classified as Network'
+        Assert-Equal 'unc:server\share' $uncIdentity.VolumeId 'UNC identity is server/share based, not letter based'
+        Assert-True (@($uncIdentity.Warnings) -join ' ') -match 'credentials' 'network warning states that no credentials are used'
+        Assert-True (@($uncIdentity.Warnings) -join ' ') -match 'cannot be verified' 'network warning states that independence cannot be verified'
+        Assert-Rejected { Get-PitrVolumeIdentity -Path '\\localhost\c$\Users' } 'loopback share rejected as not independent' { Get-PitrVolumeIdentity -Path $uncPath }
+        Assert-Rejected { Get-PitrVolumeIdentity -Path '\\127.0.0.1\backup' } '127.0.0.1 share rejected as not independent' { Get-PitrVolumeIdentity -Path $uncPath }
+    } else {
+        Assert-True ($uncError -match 'cannot be resolved') ('an unreachable UNC destination is refused fail-closed instead of guessed, got: '+$uncError)
+        Assert-Skip $false 'UNC share classification (Network kind, server/share identity, credential warnings, loopback refusal) needs an existing reachable SMB share; the hosted runner has none' | Out-Null
+    }
+} else {
+    Assert-Skip $false 'UNC path form is Windows-only; a POSIX relative name cannot be classified as a network share' | Out-Null
 }
 
 # ---------------------------------------------------------------------------
