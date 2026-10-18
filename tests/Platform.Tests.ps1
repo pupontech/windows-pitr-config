@@ -74,6 +74,11 @@ function Add-Origin([string]$Path) { $script:origins.Add($Path) }
 $realWindows=($env:OS -eq 'Windows_NT')
 $hostIsWindows=(Get-PitrWindowsHost)
 
+# Declared before any destination assertion so the earlier negative controls can name a benign
+# destination that is not the OS volume.
+$destRoot=New-DestinationTestRoot 'dest'
+Add-Origin $destRoot
+
 # ---------------------------------------------------------------------------
 # Test-PitrSafePath (platform independent; Windows name rules enforced on any host)
 # ---------------------------------------------------------------------------
@@ -239,8 +244,6 @@ if(Assert-Skip $realWindows 'unresolvable fixed-drive identity refusal requires 
 # ---------------------------------------------------------------------------
 # Test-PitrDestination
 # ---------------------------------------------------------------------------
-$destRoot=New-DestinationTestRoot 'dest'
-Add-Origin $destRoot
 $dest=mkdir (Join-Path $destRoot 'target')
 $destIdentity=Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @() -RequiredBytes 0
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$destIdentity.VolumeId)) 'safe destination returns identity'
