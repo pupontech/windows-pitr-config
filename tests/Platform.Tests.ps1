@@ -45,15 +45,21 @@ function Assert-Skip($Condition,[string]$Reason) {
     return $Condition
 }
 function New-TestRoot([string]$Label) {
-    # On a real Windows host the default temp directory lives on the OS volume, which
-    # Test-PitrDestination refuses by design. Hosted runners expose a separate scratch
-    # volume as RUNNER_TEMP, so fixtures keep exercising the native gate instead of bypassing it.
     $base=$env:TMPDIR
-    if(-not $base -and $env:OS -eq 'Windows_NT') { $base=$env:RUNNER_TEMP }
     if(-not $base) { $base=[IO.Path]::GetTempPath() }
     $path=Join-Path $base ('pitr-platform-'+$Label+'-'+[guid]::NewGuid().ToString('N'))
     $null=[IO.Directory]::CreateDirectory($path)
     return $path
+}
+function New-DestinationTestRoot([string]$Label) {
+    # Test-PitrDestination must refuse the OS volume, and the default temp tree is on the OS
+    # volume on a real Windows host, so destination fixtures use the runner's other disk.
+    if((-not $env:TMPDIR) -and $env:OS -eq 'Windows_NT' -and $env:RUNNER_TEMP) {
+        $path=Join-Path $env:RUNNER_TEMP ('pitr-dest-'+$Label+'-'+[guid]::NewGuid().ToString('N'))
+        $null=[IO.Directory]::CreateDirectory($path)
+        return $path
+    }
+    return (New-TestRoot $Label)
 }
 function New-TestFile([string]$Path,[string]$Content) {
     $parent=Split-Path $Path -Parent
@@ -215,19 +221,19 @@ if($hostIsWindows) {
 if(Assert-Skip $realWindows 'unresolvable fixed-drive identity refusal requires a real Windows host (pending real Windows CI)') {
     Assert-Rejected { Get-PitrVolumeIdentity -Path 'Z:\pitr-no-such-volume-9f3a' } 'unresolvable local identity fails closed' { Get-PitrVolumeIdentity -Path $safeRoot }
     Assert-Rejected { Get-PitrVolumeIdentity -Path ('Z:\pitr-no-such-volume-9f3a'+[IO.Path]::DirectorySeparatorChar+'deeper') } 'unresolvable identity with descendant fails closed' { Get-PitrVolumeIdentity -Path $safeRoot }
-    Assert-Rejected { Test-PitrDestination -Destination 'Z:\pitr-no-such-volume-9f3a' -Sources @() } 'unresolvable destination refused' { Test-PitrDestination -Destination $safeRoot -Sources @() }
+    Assert-Rejected { Test-PitrDestination -Destination 'Z:\pitr-no-such-volume-9f3a' -Sources @() } 'unresolvable destination refused' { Test-PitrDestination -Destination $destRoot -Sources @() }
     Assert-Rejected { Get-PitrVolumeIdentity -Path 'C:\' } 'drive root trailing-separator path-form refusal requires a real Windows host' { Get-PitrVolumeIdentity -Path $safeRoot }
 }
 
 # ---------------------------------------------------------------------------
 # Test-PitrDestination
 # ---------------------------------------------------------------------------
-$destRoot=New-TestRoot 'dest'
+$destRoot=New-DestinationTestRoot 'dest'
 Add-Origin $destRoot
 $dest=mkdir (Join-Path $destRoot 'target')
 $destIdentity=Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @() -RequiredBytes 0
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$destIdentity.VolumeId)) 'safe destination returns identity'
-Assert-Rejected { Test-PitrDestination -Destination '' -Sources @() } 'empty destination refused' { Test-PitrDestination -Destination $safeRoot -Sources @() }
+Assert-Rejected { Test-PitrDestination -Destination '' -Sources @() } 'empty destination refused' { Test-PitrDestination -Destination $destRoot -Sources @() }
 Assert-Rejected { Test-PitrDestination -Destination (Join-Path $destRoot 'target/../target') -Sources @() -RequiredBytes -1 } 'negative required bytes refused' { Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @() -RequiredBytes 0 }
 Assert-Rejected { Test-PitrDestination -Destination $destRoot -Sources @($destRoot) } 'destination identical to source refused' { Test-PitrDestination -Destination $destRoot -Sources @($safeRoot) }
 Assert-Rejected { Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @($destRoot) } 'destination nested inside a source refused' { Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @($safeRoot) }
@@ -235,7 +241,7 @@ Assert-Rejected { Test-PitrDestination -Destination $destRoot -Sources @((Join-P
 Assert-Rejected { Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @(' ') } 'empty source entry refused' { Test-PitrDestination -Destination (Join-Path $destRoot 'target') -Sources @($safeRoot) }
 
 # Exact ancestor semantics use canonical path boundaries, not naive string prefixes.
-$boundaryRoot=New-TestRoot 'boundary'
+$boundaryRoot=New-DestinationTestRoot 'boundary'
 Add-Origin $boundaryRoot
 $null=[IO.Directory]::CreateDirectory((Join-Path $boundaryRoot 'Data'))
 $null=[IO.Directory]::CreateDirectory((Join-Path $boundaryRoot 'Data-old'))
