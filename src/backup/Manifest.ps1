@@ -24,7 +24,8 @@ function ConvertTo-PitrSafeRelativePath {
     # Rejects anything that could escape the backup root or name an unsafe location.
     param([string]$RelativePath)
     if ([string]::IsNullOrWhiteSpace($RelativePath)) { throw 'Manifest entry has an empty relative path.' }
-    $value = $RelativePath.Replace('\','/').TrimStart('/')
+    $value = $RelativePath.Replace('\','/')
+    if ($value.StartsWith('/')) { throw ('Manifest entry path is rooted: ' + $RelativePath) }
     if ([string]::IsNullOrWhiteSpace($value)) { throw 'Manifest entry has an empty relative path.' }
     if ($value -match '^[A-Za-z]:') { throw ('Manifest entry path is rooted: ' + $RelativePath) }
     if ($value -match '^//' -or $value -match '^\\\\') { throw ('Manifest entry path is a UNC path: ' + $RelativePath) }
@@ -96,6 +97,10 @@ function Assert-PitrManifestShape {
             if ($seen.ContainsKey($id)) { throw ('Manifest has a duplicate entry id: ' + $id) }
             $seen[$id] = $true
             $null = ConvertTo-PitrSafeRelativePath -RelativePath ([string](Get-PitrManifestProperty $entry 'RelativePath'))
+            $payloadProperty = $entry.PSObject.Properties['BackupRelativePath']
+            if ($null -ne $payloadProperty) {
+                $null = ConvertTo-PitrSafeRelativePath -RelativePath ([string]$payloadProperty.Value)
+            }
             $type = [string](Get-PitrManifestProperty $entry 'Type')
             if ($script:PitrEntryTypes -notcontains $type) { throw ('Manifest entry has an unknown type: ' + $type) }
             $length = Get-PitrManifestProperty $entry 'Length'

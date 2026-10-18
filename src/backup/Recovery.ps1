@@ -9,35 +9,9 @@
 #      difference observed now.
 
 $script:PitrComparisonClassifications = @('Missing','Different','Identical','LikelyIdentical','CurrentOnly','Unknown')
-$script:PitrSensitiveExtensions = @('.exe','.dll','.scr','.sys','.com','.pif','.bat','.cmd','.ps1','.psm1','.vbs','.vbe','.js','.jse','.wsf','.wsh','.hta','.lnk','.msi','.msp','.reg','.jar')
 $script:PitrMaxCurrentOnlyScan = 200000
 
 function Get-PitrComparisonClassifications { return ,@($script:PitrComparisonClassifications) }
-
-function Test-PitrAdvancedRelativePath {
-    param([string]$RelativePath)
-    $value = $RelativePath.Replace('\','/')
-    foreach ($component in $value.Split('/')) {
-        if ($component -eq 'AppData') { return $true }
-    }
-    return $false
-}
-
-function Test-PitrSensitiveRelativePath {
-    param([string]$RelativePath)
-    $value = $RelativePath.Replace('\','/')
-    $leaf = $value.Split('/')[-1]
-    if ([string]::IsNullOrWhiteSpace($leaf)) { return $false }
-    $name = $leaf.ToLowerInvariant()
-    foreach ($extension in $script:PitrSensitiveExtensions) {
-        if ($name.EndsWith($extension)) { return $true }
-    }
-    $normalized = $value.ToLowerInvariant()
-    foreach ($marker in @('start menu/programs/startup','startup/','/startup')) {
-        if ($normalized.Contains($marker)) { return $true }
-    }
-    return $false
-}
 
 function Test-PitrPathInsideRoot {
     # Containment by canonical path boundary, not by string prefix.
@@ -48,6 +22,23 @@ function Test-PitrPathInsideRoot {
     if (-not $candidateFull.StartsWith($rootFull, [StringComparison]::Ordinal)) { return $false }
     $separator = $candidateFull[$rootFull.Length]
     return ($separator -eq [IO.Path]::DirectorySeparatorChar -or $separator -eq [IO.Path]::AltDirectorySeparatorChar)
+}
+
+function Assert-PitrRecoveryPath {
+    # Revalidate every existing component, including ancestors above the approved root.
+    # Lexical containment alone does not stop a junction from redirecting filesystem writes.
+    [CmdletBinding()]
+    param([Parameter(Mandatory=$true)][string]$Path)
+    $candidate=[IO.Path]::GetFullPath($Path)
+    while(-not [string]::IsNullOrEmpty($candidate)) {
+        try { $attributes=[IO.File]::GetAttributes($candidate) }
+        catch [IO.FileNotFoundException] { $candidate=Split-Path -Parent $candidate; continue }
+        catch [IO.DirectoryNotFoundException] { $candidate=Split-Path -Parent $candidate; continue }
+        if(($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw ('Recovery path contains a reparse point: '+$candidate) }
+        $parent=Split-Path -Parent $candidate
+        if($parent -eq $candidate) { break }
+        $candidate=$parent
+    }
 }
 
 function Get-PitrApprovedRoot {
@@ -457,7 +448,9 @@ function Restore-PitrFiles {
         }
 
         try {
+            Assert-PitrRecoveryPath -Path $target
             if ($Progress) { & $Progress ([pscustomobject]@{ Phase='Recover'; File=$target; FilesProcessed=$actions.Count; TotalFiles=$EntryIds.Count }) }
+            Assert-PitrRecoveryPath -Path $target
             $directory = Split-Path -Parent $target
             if (-not [IO.Directory]::Exists($directory)) { $null=[IO.Directory]::CreateDirectory($directory) }
             $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($target) + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -471,6 +464,7 @@ function Restore-PitrFiles {
                 }
             } finally { $output.Dispose(); $input.Dispose() }
             if ((Get-PitrHash -Path $temporary) -ne $expected) { throw 'The copied file does not match the expected hash.' }
+            Assert-PitrRecoveryPath -Path $target
             if ($replacing) {
                 # Preserve the current bytes first, then swap; restore them if the swap fails.
                 $preserved = Get-PitrConflictPath -Destination $destination -Kind 'replaced' -Stamp $stamp

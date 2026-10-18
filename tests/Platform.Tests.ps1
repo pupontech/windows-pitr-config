@@ -318,19 +318,23 @@ Assert-Equal 2 @($profiles | Where-Object { -not $_.Inaccessible }).Count 'only 
 # ---------------------------------------------------------------------------
 # Get-PitrSourceRoots
 # ---------------------------------------------------------------------------
-# Contract (IMPLEMENTATION-CONTRACT.md): Complete scopes Profile + Personal for every discoverable
-# profile. With two usable profiles (standard + Public) that is 4 roots; Public yields its own
-# sources and is never folded into another profile's.
+# Complete selects a single tree per usable profile, including Public.
+# Personal selects conventional personal subfolders, never AppData or the whole profile.
 $usableProfiles=@($profiles | Where-Object { -not $_.Inaccessible })
 $sources=@(Get-PitrSourceRoots -Profiles $usableProfiles -Scope Complete -CustomPaths @())
-Assert-Equal 4 $sources.Count 'Complete scopes Profile and Personal for each of the two usable profiles'
+Assert-Equal 2 $sources.Count 'Complete selects one nonoverlapping tree for each usable profile'
 Assert-Equal 2 @($sources | Where-Object { $_.Category -eq 'Profile' }).Count 'Profile category present for each usable profile'
-Assert-Equal 2 @($sources | Where-Object { $_.Category -eq 'Personal' }).Count 'Personal category present for each usable profile'
-Assert-Equal 2 @($sources | Where-Object { $_.ProfileSid -eq $publicSid }).Count 'Public contributes its own Profile and Personal sources'
+Assert-Equal 0 @($sources | Where-Object { $_.Category -eq 'Personal' }).Count 'Complete does not duplicate personal files'
+Assert-Equal 1 @($sources | Where-Object { $_.ProfileSid -eq $publicSid }).Count 'Public contributes its own single complete source'
 Assert-Equal $sources.Count @($sources | ForEach-Object { $_.Id } | Sort-Object -Unique).Count 'source ids are unique'
 Assert-True (@($sources | Where-Object { $_.ProfileSid -eq $standardSid })[0].Id -like 'profile-*') 'ids are stable profile-derived strings, never random GUIDs'
 
+foreach ($profile in $usableProfiles) {
+    $null = [IO.Directory]::CreateDirectory((Join-Path $profile.Path 'Documents'))
+    $null = [IO.Directory]::CreateDirectory((Join-Path $profile.Path 'AppData'))
+}
 $personal=@(Get-PitrSourceRoots -Profiles $usableProfiles -Scope Personal -CustomPaths @())
+Assert-True (@($personal | Where-Object { (Split-Path $_.Path -Leaf) -ne 'Documents' }).Count -eq 0) 'Personal selects actual personal subfolders, never whole profiles or AppData'
 Assert-Equal 2 $personal.Count 'Personal scope excludes complete-profile selection'
 Assert-Equal 2 @($personal | Where-Object { $_.Category -eq 'Personal' }).Count 'Personal scope keeps only personal data'
 $scopeRefused=$false

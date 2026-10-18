@@ -613,18 +613,31 @@ function Get-PitrSourceRoots {
         if ([string]::IsNullOrWhiteSpace([string]$profile.Path)) { throw (ConvertTo-PitrArgumentException ('Selected profile has no path: ' + $sid)) }
         if ($Scope -eq 'Custom') { continue }
         $isPublic = ($null -ne $profile.PSObject.Properties['IsPublic'] -and $profile.IsPublic)
-        $categories = if ($Scope -eq 'Complete') { @('Profile','Personal') } else { @('Personal') }
-        foreach ($category in $categories) {
-            $id = 'profile-' + $sid + '-' + $category.ToLowerInvariant()
-            if ($id.Length -gt 96) { $id = 'profile-' + (New-PitrStableId -Text ($sid + '|' + $category)) }
+        # Complete is one tree, never overlapping Profile and Personal copies.
+        $targets = @([pscustomobject]@{ Category='Profile'; Path=$profile.Path; Name='Profile' })
+        if ($Scope -eq 'Personal') {
+            $targets = @()
+            foreach ($folder in @('Desktop','Documents','Downloads','Pictures','Videos','Music','Favorites','Saved Games')) {
+                $candidate = Join-Path $profile.Path $folder
+                if ([IO.Directory]::Exists($candidate)) {
+                    $targets += [pscustomobject]@{ Category='Personal'; Path=$candidate; Name=$folder }
+                }
+            }
+            if ($targets.Count -eq 0) { throw ('No supported personal folders found; select Custom to include redirected folders: ' + $profile.Path) }
+        }
+        foreach ($target in $targets) {
+            $category = $target.Category
+            $id = 'profile-' + $sid + '-' + $target.Name.ToLowerInvariant().Replace(' ','-')
+            if ($id.Length -gt 96) { $id = 'profile-' + (New-PitrStableId -Text ($sid + '|' + $target.Name)) }
             if ($seen.ContainsKey($id)) { throw (ConvertTo-PitrArgumentException ('Duplicate source id: ' + $id)) }
             $seen[$id] = $true
             $identity = $null
-            try { $identity = Get-PitrVolumeIdentity -Path $profile.Path } catch { $identity = $null }
+            try { $identity = Get-PitrVolumeIdentity -Path $target.Path } catch { $identity = $null }
             $warnings = if ($identity) { @($identity.Warnings) } else { @('Source volume identity could not be resolved.') }
+            if ($Scope -eq 'Personal') { $warnings += @('Personal scope uses existing conventional folders only. Review redirected and cloud folders separately with Custom scope.') }
             $results.Add([pscustomobject]@{
                 Id=$id
-                Path=$profile.Path
+                Path=$target.Path
                 ProfileSid=$sid
                 SourceVolumeId=if ($identity) { $identity.VolumeId } else { $null }
                 Category=$category
