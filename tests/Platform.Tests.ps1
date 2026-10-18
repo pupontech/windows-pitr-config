@@ -210,8 +210,14 @@ if ($hostIsWindows) {
 }
 $identityAgain=Get-PitrVolumeIdentity -Path $safeRoot
 Assert-Equal $identity.VolumeId $identityAgain.VolumeId 'repeated resolution does not change identity'
-$relativeIdentity=Get-PitrVolumeIdentity -Path '.'
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$relativeIdentity.CanonicalPath)) 'relative path canonicalized'
+if($hostIsWindows) {
+    # Permissive mode exists only for synthetic POSIX fixtures. On a real volume table a relative
+    # name depends on the working directory, so it is refused instead of resolving against the CWD.
+    Assert-Rejected { Get-PitrVolumeIdentity -Path '.' } 'a working-directory-relative path is refused' { Get-PitrVolumeIdentity -Path $safeRoot }
+} else {
+    $relativeIdentity=Get-PitrVolumeIdentity -Path '.'
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$relativeIdentity.CanonicalPath)) 'on a synthetic non-Windows host a relative name is canonicalized for fixtures'
+}
 Assert-Rejected { Get-PitrVolumeIdentity -Path ' ' } 'whitespace path refused' { Get-PitrVolumeIdentity -Path $safeRoot }
 if($hostIsWindows) {
     # Under a forced Windows host an unresolvable POSIX relative name is refused fail-closed by
