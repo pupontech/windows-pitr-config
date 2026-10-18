@@ -554,7 +554,9 @@ function Get-PitrProfileListProfiles {
                 $fixtures.Add([pscustomobject]@{ Sid=$row.Sid; Path=$row.Path; IsPublic=$false; Inaccessible=$true; Reason='ProfileImagePath is not an absolute path.' })
                 continue
             }
-            if (-not (Get-PitrWindowsHost) -and -not (Test-Path -LiteralPath $value)) {
+            if (-not (Test-Path -LiteralPath $value)) {
+                # A registered profile whose path is missing cannot be selected as a source on any
+                # host; reporting it usable would promise a backup of data that is not there.
                 $fixtures.Add([pscustomobject]@{ Sid=$row.Sid; Path=$value; IsPublic=$false; Inaccessible=$true; Reason='Profile path does not exist on this host.' })
                 continue
             }
@@ -577,6 +579,10 @@ function Get-PitrProfileListProfiles {
         if ($expanded -match '%([^%]+)%') { $expanded = [Environment]::ExpandEnvironmentVariables($expanded) }
         if (-not [IO.Path]::IsPathRooted($expanded)) {
             $results.Add([pscustomobject]@{ Sid=$name; Path=$value; IsPublic=$false; Inaccessible=$true; Reason='ProfileImagePath is not an absolute path.' })
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $expanded)) {
+            $results.Add([pscustomobject]@{ Sid=$name; Path=$expanded; IsPublic=$false; Inaccessible=$true; Reason='Profile path does not exist on this host.' })
             continue
         }
         $isPublic = ($name -eq 'S-1-5-32-545')

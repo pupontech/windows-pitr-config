@@ -175,7 +175,9 @@ if(Assert-Skip $realWindows 'native stable Windows volume identity (volume GUID 
     Assert-Equal 'local-' (([string]$forcedIdentity.VolumeId).Substring(0,6)) 'forced host also uses the native namespaced identity'
 }
 if ($hostIsWindows) {
-    Assert-Rejected { Get-PitrVolumeIdentity -Path ($safeRoot + [IO.Path]::DirectorySeparatorChar) } 'trailing separator refused on Windows' { Get-PitrVolumeIdentity -Path $safeRoot }
+    # A trailing separator is not an alias: it must normalize to the same volume identity.
+    $trailingIdentity=Get-PitrVolumeIdentity -Path ($safeRoot + [IO.Path]::DirectorySeparatorChar)
+    Assert-Equal $identity.VolumeId $trailingIdentity.VolumeId 'a trailing separator normalizes to the same volume identity'
 } else {
     Assert-Equal 'host-path:' (([string]$identity.VolumeId).Substring(0,10)) 'non-Windows fallback identity is explicitly namespaced'
     Assert-True (@($identity.Warnings) -join ' ') -match 'never a Windows volume identity' 'non-Windows warning states the identity is not a Windows volume identity'
@@ -246,8 +248,14 @@ Add-Origin $boundaryRoot
 $null=[IO.Directory]::CreateDirectory((Join-Path $boundaryRoot 'Data'))
 $null=[IO.Directory]::CreateDirectory((Join-Path $boundaryRoot 'Data-old'))
 $null=[IO.Directory]::CreateDirectory((Join-Path $boundaryRoot 'Data/dest'))
+# Nesting is asserted on two distinct volumes so the same-volume rule cannot pre-empt it: the
+# fixture hook declares Data and Data-old on different volumes, exactly as two disks would be.
+$boundaryFixture=Join-Path $destRoot 'boundary-volume-fixture.json'
+New-TestFile $boundaryFixture ('{"'+(Join-Path $boundaryRoot 'Data').Replace('\','\\')+'":"local-boundary-a|serial:EEEE1111","'+(Join-Path $boundaryRoot 'Data-old').Replace('\','\\')+'":"local-boundary-b|serial:FFFF2222"}')
+$env:PITR_VOLUME_IDENTITY_FIXTURE=$boundaryFixture
 Assert-Accepted { Test-PitrDestination -Destination (Join-Path $boundaryRoot 'Data-old') -Sources @((Join-Path $boundaryRoot 'Data')) } 'sibling with shared name prefix is not nested'
 Assert-Rejected { Test-PitrDestination -Destination (Join-Path $boundaryRoot 'Data/dest') -Sources @((Join-Path $boundaryRoot 'Data')) } 'real child is nested' { Test-PitrDestination -Destination (Join-Path $boundaryRoot 'Data-old') -Sources @((Join-Path $boundaryRoot 'Data')) }
+Remove-Item Env:PITR_VOLUME_IDENTITY_FIXTURE -ErrorAction SilentlyContinue
 
 # Volume identity fixtures. PITR_VOLUME_IDENTITY_FIXTURE makes two independent volumes
 # distinguishable on a synthetic host, exactly as two real volumes would be on Windows.
@@ -261,6 +269,7 @@ Assert-Rejected { Test-PitrDestination -Destination $identity.CanonicalCompariso
 $osVolumeFixture=Join-Path $destRoot 'os-volume-fixture.json'
 New-TestFile $osVolumeFixture ('{"'+$identity.CanonicalComparisonPath.Replace('\','\\')+'":"local-osvol|serial:CCCCCCCC","'+$boundaryRoot.Replace('\','\\')+'":"local-othervol|serial:DDDDDDDD"}')
 $env:PITR_VOLUME_IDENTITY_FIXTURE=$osVolumeFixture
+$savedSystemRoot=$env:SystemRoot
 $env:SystemRoot=$identity.CanonicalComparisonPath
 # Get-PitrWindowsHost gates the OS-volume branch. Forcing it here exercises the branch on any host
 # that can supply an identity fixture; the run is only reported as a real Windows verification when
@@ -270,7 +279,9 @@ $env:PITR_FORCE_WINDOWS_HOST='1'
 Assert-Rejected { Test-PitrDestination -Destination $identity.CanonicalComparisonPath -Sources @($boundaryRoot) } 'OS volume destination rejected without assuming C:' { Test-PitrDestination -Destination $boundaryRoot -Sources @($identity.CanonicalComparisonPath) }
 Remove-Item Env:PITR_FORCE_WINDOWS_HOST -ErrorAction SilentlyContinue
 Remove-Item Env:PITR_VOLUME_IDENTITY_FIXTURE -ErrorAction SilentlyContinue
-Remove-Item Env:SystemRoot -ErrorAction SilentlyContinue
+# Restore the host's real SystemRoot: deleting it makes every later local path look like the
+# operating system volume, which would silently refusae unrelated destinations.
+if($null -eq $savedSystemRoot) { Remove-Item Env:SystemRoot -ErrorAction SilentlyContinue } else { $env:SystemRoot=$savedSystemRoot }
 
 # UNC path form is a Windows path syntax. On Linux, '\\\\server\\share' is a relative POSIX name and
 # cannot be classified as a network share, so the UNC assertions require a real Windows host.
@@ -322,9 +333,17 @@ $content=@(
 New-TestFile $profileFixture ($content+"`n")
 # The refusal is only meaningful against the same call succeeding once a fixture exists, so the
 # positive control runs after the fixture is in place (the count assertions below).
-$profilesRefused=$false
-try { $null=Get-PitrProfiles } catch { $profilesRefused=$true }
-Assert-True $profilesRefused 'profile discovery refuses to run without a ProfileList or fixture'
+if($realWindows) {
+    # The real registry supplies ProfileList, so the no-source refusal is a non-Windows property;
+    # what matters here is that every usable registration is an absolute existing directory.
+    $realProfiles=@(Get-PitrProfiles)
+    Assert-True ($realProfiles.Count -ge 0) 'real Windows profile discovery runs from the live registry without refusing'
+    Assert-True (@($realProfiles | Where-Object { -not $_.Inaccessible } | Where-Object { -not [IO.Path]::IsPathRooted([string]$_.Path) }).Count -eq 0) 'every usable registration is an absolute path'
+} else {
+    $profilesRefused=$false
+    try { $null=Get-PitrProfiles } catch { $profilesRefused=$true }
+    Assert-True $profilesRefused 'profile discovery refuses to run without a ProfileList or fixture'
+}
 $env:PITR_PROFILELIST_FIXTURE_PATH=$profileFixture
 $env:PITR_PUBLIC_ROOT=(Join-Path $profilesRoot 'Public')
 $profiles=@(Get-PitrProfiles)
