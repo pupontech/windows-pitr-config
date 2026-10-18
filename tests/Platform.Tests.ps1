@@ -45,7 +45,11 @@ function Assert-Skip($Condition,[string]$Reason) {
     return $Condition
 }
 function New-TestRoot([string]$Label) {
+    # On a real Windows host the default temp directory lives on the OS volume, which
+    # Test-PitrDestination refuses by design. Hosted runners expose a separate scratch
+    # volume as RUNNER_TEMP, so fixtures keep exercising the native gate instead of bypassing it.
     $base=$env:TMPDIR
+    if(-not $base -and $env:OS -eq 'Windows_NT') { $base=$env:RUNNER_TEMP }
     if(-not $base) { $base=[IO.Path]::GetTempPath() }
     $path=Join-Path $base ('pitr-platform-'+$Label+'-'+[guid]::NewGuid().ToString('N'))
     $null=[IO.Directory]::CreateDirectory($path)
