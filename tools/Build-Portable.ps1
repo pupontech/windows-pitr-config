@@ -37,13 +37,16 @@ $files.Add('package-integrity.json',$utf8.GetBytes(($meta | ConvertTo-Json -Dept
 $null=[IO.Directory]::CreateDirectory($OutDirectory)
 $temp=Join-Path $OutDirectory ('.building-'+[guid]::NewGuid().ToString('N')+'.zip')
 $final=Join-Path $OutDirectory ('windows-pitr-config-'+$version+'.zip')
+# Windows PowerShell 5.1 needs both assemblies: ZipArchive/ZipArchiveMode live in
+# System.IO.Compression, ZipFile in System.IO.Compression.FileSystem.
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 try {
     $stream=New-Object IO.FileStream($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
-    $archive=New-Object IO.Compression.ZipArchive($stream,[IO.Compression.ZipArchiveMode]::Create,$false)
+    $archive=New-Object System.IO.Compression.ZipArchive($stream,[System.IO.Compression.ZipArchiveMode]::Create,$false)
     try {
         foreach($rel in $files.Keys) {
-            $entry=$archive.CreateEntry($rel,[IO.Compression.CompressionLevel]::Optimal)
+            $entry=$archive.CreateEntry($rel,[System.IO.Compression.CompressionLevel]::Optimal)
             $entry.LastWriteTime=[DateTimeOffset]::new(2000,1,1,0,0,0,[TimeSpan]::Zero)
             $entryStream=$entry.Open()
             try { $bytes=$files[$rel];$entryStream.Write($bytes,0,$bytes.Length) } finally { $entryStream.Dispose() }
