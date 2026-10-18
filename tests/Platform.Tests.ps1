@@ -30,8 +30,9 @@ function Assert-Rejected($ScriptBlock,$Message,$ControlScriptBlock=$null) {
         $script:Passed++
         if($null -ne $ControlScriptBlock) {
             $controlThrew=$false
-            try { $null=& $ControlScriptBlock } catch { $controlThrew=$true }
-            if($controlThrew) { $script:Failures.Add('negative control also refused: '+$Message) } else { $script:Passed++ }
+            $controlError=$null
+            try { $null=& $ControlScriptBlock } catch { $controlThrew=$true; $controlError=$_.Exception.Message }
+            if($controlThrew) { $script:Failures.Add('negative control also refused ('+$controlError+'): '+$Message) } else { $script:Passed++ }
         }
     } else {
         $script:Failures.Add('expected refusal: '+$Message)
@@ -224,7 +225,9 @@ if(Assert-Skip $realWindows 'unresolvable fixed-drive identity refusal requires 
     Assert-Rejected { Get-PitrVolumeIdentity -Path 'Z:\pitr-no-such-volume-9f3a' } 'unresolvable local identity fails closed' { Get-PitrVolumeIdentity -Path $safeRoot }
     Assert-Rejected { Get-PitrVolumeIdentity -Path ('Z:\pitr-no-such-volume-9f3a'+[IO.Path]::DirectorySeparatorChar+'deeper') } 'unresolvable identity with descendant fails closed' { Get-PitrVolumeIdentity -Path $safeRoot }
     Assert-Rejected { Test-PitrDestination -Destination 'Z:\pitr-no-such-volume-9f3a' -Sources @() } 'unresolvable destination refused' { Test-PitrDestination -Destination $destRoot -Sources @() }
-    Assert-Rejected { Get-PitrVolumeIdentity -Path 'C:\' } 'drive root trailing-separator path-form refusal requires a real Windows host' { Get-PitrVolumeIdentity -Path $safeRoot }
+    $driveRootIdentity=Get-PitrVolumeIdentity -Path ($env:SystemDrive + [IO.Path]::DirectorySeparatorChar)
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$driveRootIdentity.VolumeId)) 'a drive root resolves to a native volume identity'
+    Assert-Rejected { Test-PitrDestination -Destination ($env:SystemDrive + [IO.Path]::DirectorySeparatorChar) -Sources @() } 'the OS volume root is refused as a backup destination' { Test-PitrDestination -Destination $destRoot -Sources @() }
 }
 
 # ---------------------------------------------------------------------------

@@ -299,6 +299,11 @@ function Get-PitrPathEntry {
     # Off Windows a synthetic fixture may point at a location that exists only as far as the
     # root of the fixture, so the climb may terminate on an existing ancestor.
     param([string]$Path,[switch]$Permissive)
+    if (-not $Permissive -and -not [IO.Path]::IsPathRooted([string]$Path)) {
+        # A relative path resolves against the process working directory, so the volume it names
+        # is not the user's intent. Refuse instead of guessing which disk gets the backup.
+        throw (ConvertTo-PitrArgumentException ('Path form cannot be verified on Windows: ' + $Path))
+    }
     $canonical = [IO.Path]::GetFullPath(([string]$Path).TrimEnd([char]92,[char]47))
     if ([string]::IsNullOrEmpty($canonical)) { $canonical = [IO.Path]::GetFullPath($Path) }
     if (-not $Permissive -and -not [IO.Path]::IsPathRooted($canonical)) {
