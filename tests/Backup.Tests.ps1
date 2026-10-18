@@ -43,6 +43,18 @@ function New-TestRoot([string]$Label) {
     $script:Origins.Add($path)
     return $path
 }
+function New-TestBackupDestination([string]$FixtureRoot) {
+    # Exercise native destination validation on Windows, not a safety bypass.
+    # Hosted runners expose their workspace/temp disk separately from the OS disk.
+    if ($env:OS -eq 'Windows_NT') {
+        if (-not $env:RUNNER_TEMP) { throw 'Windows backup fixtures require a separate RUNNER_TEMP volume.' }
+        $mediaRoot=Join-Path $env:RUNNER_TEMP ('pitr-backup-media-'+[guid]::NewGuid().ToString('N'))
+        $null=[IO.Directory]::CreateDirectory($mediaRoot)
+        $script:Origins.Add($mediaRoot)
+        return (Join-Path $mediaRoot 'PITR-Backups')
+    }
+    return (Join-Path $FixtureRoot 'media/PITR-Backups')
+}
 function New-TestDirectory([string]$Path) {
     if(-not [IO.Directory]::Exists($Path)) { $null=[IO.Directory]::CreateDirectory($Path) }
     return $Path
@@ -107,7 +119,7 @@ Assert-Equal '' ($missingFunctions -join ',') 'the four contract functions exist
 # ---------------------------------------------------------------------------
 $treeRoot=New-TestRoot 'tree'
 $sourceRoot=New-TestDirectory (Join-Path $treeRoot 'work/profile A')
-$destination=Join-Path $treeRoot 'media/PITR-Backups'
+$destination=New-TestBackupDestination $treeRoot
 $null=New-TestDirectory $destination
 New-TestFile (Join-Path $sourceRoot 'notes.txt') 'alpha'
 New-BinaryTestFile (Join-Path $sourceRoot 'data.bin') 300000 7
@@ -246,7 +258,7 @@ Assert-Equal 'Copied' $corruptEntry.CopyStatus 'verification never rewrites the 
 # ---------------------------------------------------------------------------
 $cancelRoot=New-TestRoot 'cancel'
 $cancelSource=New-TestDirectory (Join-Path $cancelRoot 'big/profile')
-$cancelDestination=Join-Path $cancelRoot 'media/PITR-Backups'
+$cancelDestination=New-TestBackupDestination $cancelRoot
 $null=New-TestDirectory $cancelDestination
 for($i=0;$i -lt 6;$i++) { New-BinaryTestFile (Join-Path $cancelSource ('blob-'+$i+'.bin')) 400000 ($i+3) }
 $cancelSources=New-Sources $cancelSource
@@ -312,7 +324,7 @@ Assert-Equal ([Convert]::ToBase64String($verifiedManifestBefore)) ([Convert]::To
 # ---------------------------------------------------------------------------
 $skipRoot=New-TestRoot 'skip'
 $skipSource=New-TestDirectory (Join-Path $skipRoot 'mixed/profile')
-$skipDestination=Join-Path $skipRoot 'media/PITR-Backups'
+$skipDestination=New-TestBackupDestination $skipRoot
 $null=New-TestDirectory $skipDestination
 New-TestFile (Join-Path $skipSource 'fine.txt') 'fine'
 New-TestFile (Join-Path $skipSource 'readable.txt') 'readable'
