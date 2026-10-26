@@ -18,7 +18,7 @@ $fixture=Join-Path $source 'profiles.csv'
 $previous=$env:PITR_PROFILELIST_FIXTURE_PATH
 $env:PITR_PROFILELIST_FIXTURE_PATH=$fixture
 $proof=Join-Path $env:RUNNER_TEMP 'pitr-ui-proof';$null=[IO.Directory]::CreateDirectory($proof)
-$state=[hashtable]::Synchronized(@{Done=$false;Error=$null})
+$state=[hashtable]::Synchronized(@{Done=$false;Error=$null;Confirmed=$false;Stage='not started';Status=''})
 $rs=[runspacefactory]::CreateRunspace();$rs.ApartmentState='STA';$rs.Open()
 $ps=[powershell]::Create();$ps.Runspace=$rs
 try {
@@ -43,17 +43,8 @@ public static class PitrSimpleDialogProbe {
         $proofTimer.Interval=[timespan]::FromMilliseconds(150)
         $proofTimer.Add_Tick({
             try {
+                $shared.Stage=[string]$proofState.Stage; $shared.Status=$controls.Status.Text
                 if($proofState.Started.Elapsed.TotalSeconds -gt 90) { throw ('Simple UI timed out at stage '+$proofState.Stage+'; '+$controls.Status.Text) }
-                if($proofState.Stage -eq 5) {
-                    $dialog=[PitrSimpleDialogProbe]::FindWindow('#32770','Confirm recovery')
-                    if($dialog -ne [IntPtr]::Zero) {
-                        $yes=[PitrSimpleDialogProbe]::GetDlgItem($dialog,6)
-                        if($yes -eq [IntPtr]::Zero) { throw 'Real restore confirmation lacks Yes.' }
-                        $proofState.Stage=6
-                        $null=[PitrSimpleDialogProbe]::SendMessage($yes,245,[IntPtr]::Zero,[IntPtr]::Zero)
-                    }
-                    return
-                }
                 if($view.Job) { return }
                 switch($proofState.Stage) {
                     0 {
@@ -95,7 +86,7 @@ public static class PitrSimpleDialogProbe {
                         $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32)
                         $bitmap.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
                         $stream=[IO.File]::Create((Join-Path $proof 'simple-restore.png'));try{$encoder.Save($stream)}finally{$stream.Dispose()}
-                        $proofState.Stage=5
+                        $proofState.Stage=6
                         $controls.RecoverFiles.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
                     }
                     6 {
@@ -120,9 +111,24 @@ public static class PitrSimpleDialogProbe {
     }
     $null=$ps.AddScript($operation.ToString()).AddArgument($root).AddArgument($media).AddArgument($profile).AddArgument($missing).AddArgument($changed).AddArgument($proof).AddArgument($state)
     $async=$ps.BeginInvoke()
-    if(-not $async.AsyncWaitHandle.WaitOne(120000)) { $ps.Stop(); throw 'Simple UI proof exceeded 120s.' }
+    # A DispatcherTimer does not re-enter its own Tick while a clicked button
+    # holds a modal confirmation. Drive that native dialog from this OUTSIDE
+    # thread instead of waiting for the automation timer to click itself.
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    while(-not $async.AsyncWaitHandle.WaitOne(100)) {
+        if($clock.Elapsed.TotalSeconds -gt 120) { $ps.Stop(); throw ('Simple UI proof exceeded 120s. Stage='+$state.Stage+'; Status='+$state.Status+'; Error='+$state.Error+'; Streams='+($ps.Streams.Error | Out-String)) }
+        if(-not $state.Confirmed -and ('PitrSimpleDialogProbe' -as [type])) {
+            $dialog=[PitrSimpleDialogProbe]::FindWindow('#32770','Confirm recovery')
+            if($dialog -ne [IntPtr]::Zero) {
+                $yes=[PitrSimpleDialogProbe]::GetDlgItem($dialog,6)
+                if($yes -eq [IntPtr]::Zero) { throw 'Real restore confirmation lacks Yes.' }
+                $state.Confirmed=$true
+                $null=[PitrSimpleDialogProbe]::SendMessage($yes,245,[IntPtr]::Zero,[IntPtr]::Zero)
+            }
+        }
+    }
     $null=$ps.EndInvoke($async)
-    if($ps.HadErrors -or $state.Error -or -not $state.Done) { throw ('Simple UI failed: '+$state.Error+' '+($ps.Streams.Error | Out-String)) }
+    if($ps.HadErrors -or $state.Error -or -not $state.Done -or -not $state.Confirmed) { throw ('Simple UI failed: '+$state.Error+' '+($ps.Streams.Error | Out-String)) }
     Write-Output 'Real simple WPF workflow passed: default all profiles -> backup/full verify -> exact-SID folder review -> find missing -> dry-run -> native Yes confirmation -> real restore. Newer file preserved; AppData/script not auto-restored. Five small synthetic files; no live-user data or PITR.'
 } finally {
     $ps.Dispose();$rs.Dispose();$env:PITR_PROFILELIST_FIXTURE_PATH=$previous

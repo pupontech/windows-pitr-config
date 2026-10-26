@@ -260,6 +260,7 @@ function Show-PitrBackupUi {
         $map=& $getMappings
         $context=([ordered]@{Manifest=$controls.ManifestPath.Text;Mappings=@($map.Keys | Sort-Object | ForEach-Object { [ordered]@{Id=$_;Root=$map[$_]} });Ids=@($ids | Sort-Object);Conflict=$policy;Alternate=$controls.AlternateRoot.Text;Advanced=[bool]$controls.AllowAdvanced.IsChecked} | ConvertTo-Json -Depth 6 -Compress)
         if($execute -and ([string]::IsNullOrWhiteSpace([string]$view.PreviewContext) -or $view.PreviewContext -cne $context)) { $controls.Status.Text='Preview this selection and these destinations first. Preview again after any change.'; return }
+        if($execute -and -not $controls.MappingsApproved.IsChecked) { $controls.Status.Text='Review and approve the destination folders before restoring.'; return }
         if(-not $execute) { $view.PreviewContext=$null; $view.PendingPreviewContext=$context }
         if($execute) {
             $message='Restore '+$ids.Count+' selected file(s)? Existing files: '+$policy+'.'

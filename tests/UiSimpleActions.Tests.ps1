@@ -51,6 +51,10 @@ Assert ($null -eq $script:launch -and $controls.Status.Text -match 'Preview') 'E
 Assert ($script:launch.Kind -eq 'Recovery' -and -not $script:launch.Args.Execute) 'Preview must stay dry-run.'
 $first=$view.PendingPreviewContext
 $view.PreviewContext=$first # Simulate a successfully completed preview of exactly this context.
+$controls.MappingsApproved.IsChecked=$false
+& $recover $true
+Assert ($controls.Status.Text -match 'approve|approval') 'Withdrawing destination approval must block execution before confirmation.'
+$controls.MappingsApproved.IsChecked=$true
 $controls.AlternateRoot.Text='changed-target'
 & $recover $true
 Assert ($controls.Status.Text -match 'Preview') 'A changed destination must require another preview.'
