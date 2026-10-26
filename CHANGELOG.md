@@ -4,6 +4,22 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.3] — private testing build
+
+### Changed
+- Simplified Back up files / Restore files screens: choose storage and start; verification runs automatically. Folder exclusions and technical settings are collapsed by default.
+- Restore opens a dated backup folder, checks it, suggests whole-profile destinations only by exact Windows account identity, and asks for explicit folder approval. Unknown locations stay blank.
+- Restore requires a successful dry-run preview matching the selected files, destinations and policies before its default-No confirmation. Existing files are kept by default.
+- Plain completion messages and View details keep warnings, skipped files and every error visible; full reports remain available.
+
+### Fixed
+- Shared Public folder discovery no longer relies on a Users-group SID registration being present in ProfileList. An unavailable/unsupported Public location is exposed rather than silently omitted.
+- Publishing a successful backup no longer triggers its own cancellation via the manifest textbox.
+- Recovery errors beyond the first 200 routine actions are no longer hidden in View details.
+
+### Tests
+- Added simple-layout, folder/identity suggestions, production-handler and Public discovery regressions, plus a real Windows WPF/engine backup-preview-confirm-restore fixture and screenshots.
+
 ## [1.9.0-test.2] — private testing build
 
 ### Changed

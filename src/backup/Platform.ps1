@@ -539,8 +539,29 @@ function Test-PitrDestination {
 function Get-PitrProfiles {
     # Contract surface: normal ProfileList profiles plus Public on the default OS volume only.
     # Inaccessible registrations are exposed with Inaccessible/Reason instead of being omitted.
-    $profiles = Get-PitrProfileListProfiles
+    $profiles = @(Get-PitrProfileListProfiles)
+    if(@($profiles | Where-Object { $_.IsPublic }).Count -eq 0) { $profiles += Get-PitrPublicProfile }
     return $profiles
+}
+
+function Get-PitrPublicProfile {
+    # Public is a shared directory, not a normal user SID registration. Keep the
+    # existing synthetic identity for compatibility with older manifests/fixtures.
+    $row=[pscustomobject]@{Sid='S-1-5-32-545';Path=$null;IsPublic=$true;Inaccessible=$true;Reason=$null}
+    try {
+        if(-not (Get-PitrWindowsHost)) { throw 'Public discovery requires the Windows registry.' }
+        $value=Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -Name 'Public' -ErrorAction Stop
+        $property=$value.PSObject.Properties['Public']
+        if($null -eq $property -or [string]::IsNullOrWhiteSpace([string]$property.Value)) { throw 'Public registry location is unavailable.' }
+        $path=[Environment]::ExpandEnvironmentVariables([string]$property.Value)
+        $row.Path=$path
+        if(-not [IO.Path]::IsPathRooted($path) -or -not [IO.Directory]::Exists($path)) { throw 'Public folder is missing, inaccessible or not an absolute path.' }
+        $publicVolume=Get-PitrVolumeIdentity -Path $path
+        $osVolume=Get-PitrVolumeIdentity -Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Windows))
+        if(-not $publicVolume.VolumeId -or -not $osVolume.VolumeId -or $publicVolume.VolumeId -ne $osVolume.VolumeId) { throw 'Public folder is outside the supported operating-system volume or its volume identity is unavailable.' }
+        $row.Inaccessible=$false
+    } catch { $row.Reason=$_.Exception.Message }
+    return $row
 }
 
 function Get-PitrProfileListProfiles {

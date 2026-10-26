@@ -2,6 +2,26 @@
 
 Status: implementation documentation for the current development tree; not a release or Windows verification claim. Backup/recovery is separate from the existing Windows PITR rollback workflow. This feature never starts a restore point rollback, changes WinRE, or reboots the computer.
 
+## Simple screens
+
+Extract the whole ZIP and launch **pitr-backup.cmd**.
+
+### Back up files
+
+1. Choose a folder on separate storage, preferably an external drive. The Windows volume is refused.
+2. All discovered user profiles and the supported Public folder are included automatically. Use **Change folders** only to exclude users. **Advanced backup options** holds Personal/Custom scopes and additional paths; review redirected/cloud locations separately.
+3. Click **Start backup**. Full verification follows automatically. **Backup verified** means the recorded copy passed the checks, not that apps are consistent or PITR is ready. A cancelled/incomplete/problem result must not be treated as full protection. **View details** shows warnings and errors.
+
+### Restore files
+
+1. Choose the dated backup generation folder with **Choose backup folder**. You do not need to locate the manifest file. The tool checks the backup before showing folder suggestions.
+2. Review the two-column folder table and tick **These are the correct folders for these users**. Whole-profile suggestions require an exact Windows account SID match; names and old paths are not used as identity proof. Enter destinations for unmatched, Personal or Custom sources yourself. Then click **Find missing files**.
+3. Missing ordinary personal files are selected automatically; AppData and executable/startup content are not. Review the selection, click **Preview restore**, inspect **View details**, then click **Restore selected files** and confirm. No files are written by the preview. Changing files, mappings, conflict policy, alternate location or advanced consent requires a new preview.
+
+Existing files are kept by default. Replacement, recovery alongside existing files, AppData consent, alternate folders, search/filters and direct manifest controls are under **Advanced restore options**. Reports are under **Details and reports**. Read every warning: incomplete scans, skipped files and errors are not silently turned into success. Problem rows remain visible in details even when routine rows are truncated.
+
+The source CLI and safety limitations below remain available for advanced use. Live Windows/PITR acceptance and the limitations in TESTING.md remain separate from automated fixture tests.
+
 ## Before a PITR rollback
 
 1. If Windows still runs, save work and close applications that may be writing files, especially databases, mail clients, browsers, and document editors. The backup reads the live filesystem; it does not create a VSS snapshot and is not application/database consistent. A file can change during capture.

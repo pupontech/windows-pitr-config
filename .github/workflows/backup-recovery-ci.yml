@@ -70,5 +70,7 @@ jobs:
         if: always()
         with:
           name: portable-${{ matrix.os }}-${{ matrix.shell }}
-          path: ${{ runner.temp }}/pitr-dist/*
+          path: |
+            ${{ runner.temp }}/pitr-dist/*
+            ${{ runner.temp }}/pitr-ui-proof/*
           if-no-files-found: ignore

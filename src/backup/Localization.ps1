@@ -3,14 +3,14 @@
 $script:PitrBackupLabelData = @'
 {
   "en": {
-    "StartBackup": "Backup and verify",
-    "VerifyBackup": "Full verification",
-    "CompareBackup": "Deep comparison",
-    "RecoverFiles": "Execute selected recovery...",
+    "StartBackup": "Start backup",
+    "VerifyBackup": "Check backup again",
+    "CompareBackup": "Compare all files",
+    "RecoverFiles": "Restore selected files...",
     "CancelWork": "Cancel operation",
-    "PreviewRecovery": "Preview selected recovery",
-    "LoadMappings": "Load mapping rows",
-    "ExportReport": "Export JSON report"
+    "PreviewRecovery": "Preview restore",
+    "LoadMappings": "Reload folders",
+    "ExportReport": "Save report"
   },
   "de": {
     "StartBackup": "Sichern und pr\u00fcfen",

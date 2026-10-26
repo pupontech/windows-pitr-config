@@ -1,6 +1,6 @@
 # windows-pitr-config
 
-> **Private testing build 1.9.0-test.2 — backup and selective file recovery**
+> **Private testing build 1.9.0-test.3 — backup and selective file recovery**
 >
 > Extract the complete ZIP and start **pitr-backup.cmd**. Keep its `src` folder beside it;
 > this testing build is not the single-file upstream download linked below.

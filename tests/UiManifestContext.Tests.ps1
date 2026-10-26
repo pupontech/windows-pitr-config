@@ -72,8 +72,10 @@ $controls.ManifestPath=$manifestControl
 $view.Kind='Backup'
 $view.Shared.Result=[pscustomobject]@{ManifestPath='new-manifest';State='Verified'}
 $view.Job=[pscustomobject]@{PowerShell=$ps;Runspace=$rs;Handle=$handle;Generation=$view.Generation}
+$generationBeforePublication=$view.Generation
 & $tick
 if($view.Report -ne $view.Shared.Result) { throw 'Publishing a backup manifest erased the newly completed backup report' }
+if($view.Shared.Cancelled -or $controls.Status.Text -notmatch '^Backup verified' -or $view.Generation -ne $generationBeforePublication) { throw 'RED: publishing a verified backup must not cancel itself, change generation, or claim interruption.' }
 Write-Output 'Active comparison and new-backup report publication remain functional.'
 # Exercise production launch capture rather than constructing every job by hand.
 $startNode=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$start'},$true)
