@@ -299,6 +299,11 @@ function Get-PitrPathEntry {
     # Off Windows a synthetic fixture may point at a location that exists only as far as the
     # root of the fixture, so the climb may terminate on an existing ancestor.
     param([string]$Path,[switch]$Permissive)
+    if (-not $Permissive -and -not [IO.Path]::IsPathRooted([string]$Path)) {
+        # A relative path resolves against the process working directory, so the volume it names
+        # is not the user's intent. Refuse instead of guessing which disk gets the backup.
+        throw (ConvertTo-PitrArgumentException ('Path form cannot be verified on Windows: ' + $Path))
+    }
     $canonical = [IO.Path]::GetFullPath(([string]$Path).TrimEnd([char]92,[char]47))
     if ([string]::IsNullOrEmpty($canonical)) { $canonical = [IO.Path]::GetFullPath($Path) }
     if (-not $Permissive -and -not [IO.Path]::IsPathRooted($canonical)) {
@@ -326,13 +331,11 @@ function Get-PitrPathEntry {
 }
 
 function Get-PitrWindowsHost {
-    # True on a real Windows host. PITR_FORCE_WINDOWS_HOST is a test-only hook: suites set it to
-    # '1' so the Windows-only branches of Get-PitrVolumeIdentity, Test-PitrDestination and
-    # Get-PitrSourceRoots execute on a Windows CI host with synthetic fixtures. It never turns a
-    # Linux host into a Windows host for evidence purposes - the suite records real vs forced
-    # host separately and only a real Windows OS reports those branches as verified.
-    if ($env:PITR_FORCE_WINDOWS_HOST -eq '1') { return $true }
-    return ($env:OS -eq 'Windows_NT')
+    # Windows identity is a runtime fact, not a spoofable environment assertion.
+    # The force hook can exercise synthetic branches off Windows only; it cannot
+    # disable native Windows checks or enable fixture identity on a Windows runtime.
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { return $true }
+    return ($env:PITR_FORCE_WINDOWS_HOST -eq '1')
 }
 
 function Get-PitrNativeVolumeAvailable {
@@ -340,9 +343,9 @@ function Get-PitrNativeVolumeAvailable {
 }
 
 function Get-PitrVolumeIdentityFixture {
-    # Test-only hook: lets synthetic fixtures present distinguishable volume identities on a
-    # host that has only one. Real Windows runs leave PITR_VOLUME_IDENTITY_FIXTURE unset and
-    # therefore always use the native handle-based identity below.
+    # Only non-Windows synthetic fixtures may override identity. Native Windows
+    # safety decisions must never consume inherited environment-provided identities.
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { return $null }
     if (-not $env:PITR_VOLUME_IDENTITY_FIXTURE) { return $null }
     $path = $env:PITR_VOLUME_IDENTITY_FIXTURE
     if (-not [IO.File]::Exists($path)) { return $null }
@@ -500,9 +503,14 @@ function Test-PitrDestination {
     }
     if ($onWindowsHost -and $identity.Kind -eq 'Local') {
         $osIdentity = $null
-        $systemRoot = $env:SystemRoot
-        if ([string]::IsNullOrWhiteSpace($systemRoot)) { $systemRoot = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Destination)) }
-        try { $osIdentity = Get-PitrVolumeIdentity -Path $systemRoot } catch { $osIdentity = $null }
+        $systemRoot=$null
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $systemRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+        } else { $systemRoot=$env:SystemRoot } # Synthetic non-Windows host branch only.
+        if ([string]::IsNullOrWhiteSpace($systemRoot)) { throw (ConvertTo-PitrArgumentException 'Operating system directory cannot be established; refusing the destination.') }
+        try { $osIdentity = Get-PitrVolumeIdentity -Path $systemRoot }
+        catch { throw (ConvertTo-PitrArgumentException 'Operating system volume identity cannot be established; refusing the destination.') }
+        if (-not $osIdentity) { throw (ConvertTo-PitrArgumentException 'Operating system volume identity is unavailable; refusing the destination.') }
         if ($osIdentity -and $identity.VolumeId -eq $osIdentity.VolumeId) {
             throw (ConvertTo-PitrArgumentException ('Backup destination is on the operating system volume; point-in-time recovery would remove it together with the system: ' + $Destination))
         }
@@ -554,7 +562,9 @@ function Get-PitrProfileListProfiles {
                 $fixtures.Add([pscustomobject]@{ Sid=$row.Sid; Path=$row.Path; IsPublic=$false; Inaccessible=$true; Reason='ProfileImagePath is not an absolute path.' })
                 continue
             }
-            if (-not (Get-PitrWindowsHost) -and -not (Test-Path -LiteralPath $value)) {
+            if (-not (Test-Path -LiteralPath $value)) {
+                # A registered profile whose path is missing cannot be selected as a source on any
+                # host; reporting it usable would promise a backup of data that is not there.
                 $fixtures.Add([pscustomobject]@{ Sid=$row.Sid; Path=$value; IsPublic=$false; Inaccessible=$true; Reason='Profile path does not exist on this host.' })
                 continue
             }
@@ -577,6 +587,10 @@ function Get-PitrProfileListProfiles {
         if ($expanded -match '%([^%]+)%') { $expanded = [Environment]::ExpandEnvironmentVariables($expanded) }
         if (-not [IO.Path]::IsPathRooted($expanded)) {
             $results.Add([pscustomobject]@{ Sid=$name; Path=$value; IsPublic=$false; Inaccessible=$true; Reason='ProfileImagePath is not an absolute path.' })
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $expanded)) {
+            $results.Add([pscustomobject]@{ Sid=$name; Path=$expanded; IsPublic=$false; Inaccessible=$true; Reason='Profile path does not exist on this host.' })
             continue
         }
         $isPublic = ($name -eq 'S-1-5-32-545')
@@ -613,18 +627,31 @@ function Get-PitrSourceRoots {
         if ([string]::IsNullOrWhiteSpace([string]$profile.Path)) { throw (ConvertTo-PitrArgumentException ('Selected profile has no path: ' + $sid)) }
         if ($Scope -eq 'Custom') { continue }
         $isPublic = ($null -ne $profile.PSObject.Properties['IsPublic'] -and $profile.IsPublic)
-        $categories = if ($Scope -eq 'Complete') { @('Profile','Personal') } else { @('Personal') }
-        foreach ($category in $categories) {
-            $id = 'profile-' + $sid + '-' + $category.ToLowerInvariant()
-            if ($id.Length -gt 96) { $id = 'profile-' + (New-PitrStableId -Text ($sid + '|' + $category)) }
+        # Complete is one tree, never overlapping Profile and Personal copies.
+        $targets = @([pscustomobject]@{ Category='Profile'; Path=$profile.Path; Name='Profile' })
+        if ($Scope -eq 'Personal') {
+            $targets = @()
+            foreach ($folder in @('Desktop','Documents','Downloads','Pictures','Videos','Music','Favorites','Saved Games')) {
+                $candidate = Join-Path $profile.Path $folder
+                if ([IO.Directory]::Exists($candidate)) {
+                    $targets += [pscustomobject]@{ Category='Personal'; Path=$candidate; Name=$folder }
+                }
+            }
+            if ($targets.Count -eq 0) { throw ('No supported personal folders found; select Custom to include redirected folders: ' + $profile.Path) }
+        }
+        foreach ($target in $targets) {
+            $category = $target.Category
+            $id = 'profile-' + $sid + '-' + $target.Name.ToLowerInvariant().Replace(' ','-')
+            if ($id.Length -gt 96) { $id = 'profile-' + (New-PitrStableId -Text ($sid + '|' + $target.Name)) }
             if ($seen.ContainsKey($id)) { throw (ConvertTo-PitrArgumentException ('Duplicate source id: ' + $id)) }
             $seen[$id] = $true
             $identity = $null
-            try { $identity = Get-PitrVolumeIdentity -Path $profile.Path } catch { $identity = $null }
+            try { $identity = Get-PitrVolumeIdentity -Path $target.Path } catch { $identity = $null }
             $warnings = if ($identity) { @($identity.Warnings) } else { @('Source volume identity could not be resolved.') }
+            if ($Scope -eq 'Personal') { $warnings += @('Personal scope uses existing conventional folders only. Review redirected and cloud folders separately with Custom scope.') }
             $results.Add([pscustomobject]@{
                 Id=$id
-                Path=$profile.Path
+                Path=$target.Path
                 ProfileSid=$sid
                 SourceVolumeId=if ($identity) { $identity.VolumeId } else { $null }
                 Category=$category

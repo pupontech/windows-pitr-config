@@ -1,5 +1,17 @@
 # windows-pitr-config
 
+> **Private testing build 1.9.0-test.1 — backup and selective file recovery**
+>
+> Extract the complete ZIP and start **pitr-backup.cmd**. Keep its `src` folder beside it;
+> this testing build is not the single-file upstream download linked below.
+> Read [TESTING.md](TESTING.md) and the [backup/recovery guide](docs/BACKUP-RECOVERY-GUIDE.md).
+> Rollback is separately operated. Skipping a verified data backup can lose current changes;
+> rollback can remove/revert apps, and file backup does not reinstall them. Close apps first.
+> Current testing evidence is supplied beside the ZIP; live PITR and the limits in TESTING.md
+> remain owner-validation gates. No claim that all possible bugs have been eliminated.
+
+## Original upstream PITR configuration documentation
+
 [![Download pitr-config.cmd](https://img.shields.io/badge/download-pitr--config.cmd-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/henmedia/windows-pitr-config/releases/latest/download/pitr-config.cmd)
 [![Latest release](https://img.shields.io/github/v/release/henmedia/windows-pitr-config?style=for-the-badge&label=version&color=555555)](https://github.com/henmedia/windows-pitr-config/releases/latest)
 [![Guide](https://img.shields.io/badge/guide-EN%20DE%20NL%20FR%20ES%20PT%20IT%20PL%20UK%20CS-1f6feb?style=for-the-badge)](https://henmedia.github.io/windows-pitr-config/guide.html)

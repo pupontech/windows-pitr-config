@@ -178,7 +178,7 @@ $ErrorActionPreference = 'Stop'
 # The one place the version is defined. It appears under the headline in the window
 # and in the selftest; a release is tagged with "v" followed by this value. Keeping
 # it out of the batch header above avoids having two numbers that can drift apart.
-$Version  = '1.8.2'
+$Version  = '1.9.0-test.1'
 
 # Asked on start unless PITR_NOUPDATE is set. Returns the newest release of the project.
 $UpdateApi = 'https://api.github.com/repos/henmedia/windows-pitr-config/releases/latest'
@@ -238,6 +238,10 @@ $LangText = @{
 
 # ----------------------------------------------------------------- English --
 en = @{
+    warnAppsTitle = 'Applications and data before restore'
+    warnApps = 'Restoring an older system state can remove or revert apps, drivers and updates installed since that point. You may need to reinstall or repair apps. A file backup does not preserve installed apps or reinstall them. Close apps before a live file backup; open app data may be inconsistent. This warning is shown on every launch.'
+    warnNoBackupTitle = 'Continue without a confirmed data backup?'
+    warnNoBackup = 'No current verified data backup has been confirmed by this window. If you skip Backup Before Restore and continue to a rollback, you may lose current files or newer changes. Opening the backup window alone does not prove a complete, verified backup. Back up and verify your selected data on separate storage first. Yes: I understand and want to continue toward recovery. No: open Backup Before Restore instead. Cancel: stay here. This does not start an image restore.'
     backupSection = 'Backup & Recovery'
     backupBefore = 'Backup Before Restore'
     backupVerify = 'Verify Existing Backup'
@@ -1993,6 +1997,10 @@ function T {
 # Derive the language from the Windows display language; English if it is not one of ours.
 $uiLang = (Get-UICulture).TwoLetterISOLanguageName
 $script:Lang = if ($LangCodes -contains $uiLang) { $uiLang } else { 'en' }
+# Headless runs warn on stderr without blocking scheduled tasks or corrupting stdout.
+if ($Apply -or $Snapshot -or $AutoStart -or $Idle) {
+    [Console]::Error.WriteLine((T 'warnApps'))
+}
 
 function Test-Admin {
     ([Security.Principal.WindowsPrincipal] `
@@ -3943,12 +3951,33 @@ $ctl.BtnCopy.Add_Click({
     } catch { Write-Log "$(T 'logError'): $($_.Exception.Message)" }
 })
 
+# No persisted dismissal or button-click-based claim of verified readiness.
+function Show-PitrSafetyMessage {
+    param([string]$Text, [string]$Title, [switch]$Confirmation)
+    if ($Confirmation) {
+        return [System.Windows.MessageBox]::Show($Text, $Title,
+            [System.Windows.MessageBoxButton]::YesNoCancel,
+            [System.Windows.MessageBoxImage]::Warning,
+            [System.Windows.MessageBoxResult]::No).ToString()
+    }
+    $null = [System.Windows.MessageBox]::Show($Text, $Title,
+        [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+}
+function Show-PitrApplicationWarning {
+    Show-PitrSafetyMessage -Text (T 'warnApps') -Title (T 'warnAppsTitle')
+}
+function Confirm-PitrRecoveryHandoff {
+    $choice = Show-PitrSafetyMessage -Text (T 'warnNoBackup') -Title (T 'warnNoBackupTitle') -Confirmation
+    if ($choice -eq 'No') { Open-PitrBackupWindow -Mode 'Backup'; return $false }
+    return ($choice -eq 'Yes')
+}
+
 # Der einzige Knopf, der den Rechner neu startet - deshalb die Rueckfrage, und deshalb
 # steht in ihrem Text, was dabei verloren geht.
 $ctl.BtnWinRE.Add_Click({
-    $answer = [System.Windows.MessageBox]::Show((T 'askWinRE'), (T 'askWinRET'),
-        [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
-    if ($answer -ne [System.Windows.MessageBoxResult]::Yes) { return }
+    if (-not (Confirm-PitrRecoveryHandoff)) { return }
+    $answer = Show-PitrSafetyMessage -Text (T 'askWinRE') -Title (T 'askWinRET') -Confirmation
+    if ($answer -ne 'Yes') { return }
     try {
         Write-Log (T 'logWinRE')
         Update-Ui
@@ -4429,4 +4458,5 @@ if ($script:UpdateJob) {
     $script:UpdateTimer.Start()
 }
 
+Show-PitrApplicationWarning
 $window.ShowDialog() | Out-Null

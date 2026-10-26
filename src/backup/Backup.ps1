@@ -365,7 +365,22 @@ function Invoke-PitrBackupEntry {
     if (Test-PitrBackupFixtureMatch -Fixture $script:PitrBackupFailureFixture -RelativePath $Entry.RelativePath) {
         throw 'Injected read failure (test fixture): the source object could not be read.'
     }
-    $destination = Join-Path $DestinationRoot $Entry.BackupRelativePath
+    $destination = Resolve-PitrPayloadPath -BackupRoot $DestinationRoot -RelativePath $Entry.BackupRelativePath -AllowMissing
+    if($Job.PSObject.Properties['ResumeInventory'] -and $Job.ResumeInventory -and [IO.File]::Exists($destination)) {
+        $sourceHash=Get-PitrHash -Path $Path
+        $storedHash=Get-PitrHash -Path $destination
+        if($sourceHash -eq $storedHash) {
+            $info=New-Object IO.FileInfo($Path)
+            $Entry.Sha256=$storedHash
+            $Entry.Length=$info.Length
+            $Entry.LastWriteUtc=$info.LastWriteTimeUtc.ToString('o')
+            return $info.Length
+        }
+        # Never overwrite previous bytes, even in an interrupted generation.
+        # A new payload name allows repair while retaining the damaged/older object for inspection.
+        $Entry.BackupRelativePath=$Entry.BackupRelativePath+'.resumed-'+[guid]::NewGuid().ToString('N')
+        $destination=Resolve-PitrPayloadPath -BackupRoot $DestinationRoot -RelativePath $Entry.BackupRelativePath -AllowMissing
+    }
     $destinationDirectory = Split-Path $destination -Parent
     if (-not [IO.Directory]::Exists($destinationDirectory)) { $null = [IO.Directory]::CreateDirectory($destinationDirectory) }
     # No silent overwrite: within a unique generation a collision is an explicit failure.
@@ -515,8 +530,8 @@ function Invoke-PitrBackupSource {
                     $entry.CopyStatus = 'Copied'
                     $null = Set-PitrBackupEntry -Manifest $Manifest -Entry $entry
                     $Counters.Copied = $Counters.Copied + 1
-                    $directoryTarget = Join-Path $DestinationRoot $entry.BackupRelativePath
                     try {
+                        $directoryTarget = Resolve-PitrPayloadPath -BackupRoot $DestinationRoot -RelativePath $entry.BackupRelativePath -AllowMissing
                         if (-not [IO.Directory]::Exists($directoryTarget)) { $null = [IO.Directory]::CreateDirectory($directoryTarget) }
                     } catch {
                         $entry.CopyStatus = 'Failed'
@@ -795,9 +810,9 @@ function Resume-PitrBackup {
     }
     $log = New-PitrBackupLog -GenerationPath $generationPath -BackupId $manifest.BackupId
     Write-PitrBackupLog -Log $log -Message ('Resume requested for generation ' + $manifest.BackupId + ' from state ' + $manifest.State + '.')
-    $identity = $null
-    try { $identity = Test-PitrDestination -Destination (Split-Path $generationPath -Parent) -Sources ([string[]]@($manifest.Sources | ForEach-Object { [string]$_.Path })) -RequiredBytes 0 } catch { $identity = $null }
-    if ($null -eq $identity) { Write-PitrBackupLog -Log $log -Message 'WARNING destination identity could not be re-validated on this computer; the recorded identity from the manifest is used for reporting only.' }
+    # Safety validation is a gate, not a best-effort warning. A moved generation must
+    # still be on approved storage before any mutation, irrespective of manifest identity.
+    $identity = Test-PitrDestination -Destination $generationPath -Sources ([string[]]@($manifest.Sources | ForEach-Object { [string]$_.Path })) -RequiredBytes 0
     $counters = [pscustomobject]@{ Expected=0; Copied=0; Skipped=0; Failed=0; Bytes=0; Cancelled=$false }
     $logPath = Join-Path $generationPath $script:PitrBackupLogFileName
     $statusPath = Join-Path $generationPath $script:PitrBackupStateFileName
@@ -811,9 +826,12 @@ function Resume-PitrBackup {
         if (Test-PitrBackupCancelled -Cancellation $Cancellation) { break }
         if ($entry.CopyStatus -ne 'Copied') { continue }
         $checked = $checked + 1
-        $destination = Join-Path $generationPath $entry.BackupRelativePath
+        $destination=$null
         $problem = $null
-        if ($entry.Type -eq 'Directory') {
+        try { $destination=Resolve-PitrPayloadPath -BackupRoot $generationPath -RelativePath $entry.BackupRelativePath }
+        catch { $problem='Payload boundary: '+$_.Exception.Message }
+        if ($problem) { }
+        elseif ($entry.Type -eq 'Directory') {
             if (-not [IO.Directory]::Exists($destination)) { $problem = 'Recorded backup folder is missing.' }
         } elseif (-not [IO.File]::Exists($destination)) {
             $problem = 'Recorded backup file is missing.'
@@ -848,67 +866,30 @@ function Resume-PitrBackup {
         $manifest = Set-PitrManifestState -Manifest $manifest -State 'Running'
         $null = Write-PitrManifest -ManifestPath $fullManifest -Manifest $manifest
     }
-    # Phase 2: re-inventory the source roots and re-copy anything missing, incomplete or changed.
-    $sourceById = @{}
-    foreach ($source in @($manifest.Sources)) { $sourceById[[string]$source.Id] = $source }
-    $recopied = 0
-    $cancelled = $false
+    # Re-enumerate ALL source trees. An interrupted inventory is not a complete list.
+    # Retain old payload bytes, but construct fresh accounting for the complete current scope.
+    $previous=@($manifest.Entries)
+    $manifest.Entries=@()
+    $job | Add-Member -NotePropertyName ResumeInventory -NotePropertyValue $true -Force
+    $cancelled=$false
     try {
-        foreach ($entry in $entries) {
-            if (Test-PitrBackupCancelled -Cancellation $Cancellation) { $cancelled = $true; break }
-            if ($entry.CopyStatus -ne 'Pending') { continue }
-            if (-not $sourceById.ContainsKey([string]$entry.SourceId)) {
-                $entry.CopyStatus = 'Failed'
-                $entry.Error = 'Source ' + $entry.SourceId + ' is not recorded in this manifest, so the object cannot be re-copied.'
-                $counters.Failed = $counters.Failed + 1
-                Write-PitrBackupLog -Log $log -Message ('FAILED ' + $entry.RelativePath + ' : ' + $entry.Error)
-                continue
-            }
-            $source = $sourceById[[string]$entry.SourceId]
-            if ($entry.Type -eq 'Directory') {
-                $target = Join-Path $generationPath $entry.BackupRelativePath
-                try {
-                    if (-not [IO.Directory]::Exists($target)) { $null = [IO.Directory]::CreateDirectory($target) }
-                    $entry.CopyStatus = 'Copied'
-                } catch {
-                    $entry.CopyStatus = 'Failed'
-                    $entry.Error = 'Backup folder could not be re-created: ' + $_.Exception.Message
-                    $counters.Failed = $counters.Failed + 1
-                }
-                continue
-            }
-            $originalPath = [string]$entry.OriginalPath
-            if ([string]::IsNullOrWhiteSpace($originalPath) -or (-not [IO.File]::Exists($originalPath))) {
-                $entry.CopyStatus = 'Failed'
-                $entry.Error = 'The source object no longer exists at ' + $originalPath + ', so it cannot be re-copied. It is reported as failed rather than silently dropped.'
-                $counters.Failed = $counters.Failed + 1
-                Write-PitrBackupLog -Log $log -Message ('FAILED ' + $entry.RelativePath + ' : ' + $entry.Error)
-                continue
-            }
-            # A re-inventory of the live source: a file that changed since the interrupted run is
-            # re-read rather than reported as captured.
-            try {
-                $copied = Invoke-PitrBackupEntry -Entry $entry -Path $originalPath -DestinationRoot $generationPath -Job $job -Log $log `
-                    -Cancellation $Cancellation -BytesProcessed $counters.Bytes -TotalBytes 0 -ErrorCount $counters.Failed -Index $recopied -Total $entries.Count -Profile ([string]$source.DisplayName) -Progress $Progress
-                $entry.CopyStatus = 'Copied'
-                $entry.Length = $copied
-                $counters.Copied = $counters.Copied + 1
-                $counters.Bytes = $counters.Bytes + $copied
-                $recopied = $recopied + 1
-                Write-PitrBackupLog -Log $log -Message ('RECOPIED ' + $entry.RelativePath + ' : re-read from ' + $originalPath + ' (' + $copied + ' bytes) because it was missing, incomplete or failed re-validation.')
-            } catch [System.OperationCanceledException] {
-                $entry.CopyStatus = 'Pending'
-                $entry.Error = $_.Exception.Message
-                $cancelled = $true
-                break
-            } catch {
-                $entry.CopyStatus = 'Failed'
-                $entry.Error = $_.Exception.Message
-                $counters.Failed = $counters.Failed + 1
-                Write-PitrBackupLog -Log $log -Message ('FAILED ' + $entry.RelativePath + ' : ' + $_.Exception.Message)
-            }
+        foreach($source in @($manifest.Sources)) {
+            if(Test-PitrBackupCancelled -Cancellation $Cancellation) { $cancelled=$true; break }
+            Invoke-PitrBackupSource -Source $source -Manifest $manifest -Job $job -Log $log -Scope $manifest.Scope -DestinationRoot $generationPath -Cancellation $Cancellation -Progress $Progress -Counters $counters
         }
-    } catch [System.OperationCanceledException] { $cancelled = $true }
+    } catch [System.OperationCanceledException] { $cancelled=$true }
+    $seen=@{}
+    foreach($item in @($manifest.Entries)) { $seen[$item.SourceId+'|'+$item.RelativePath]=$true }
+    foreach($item in $previous) {
+        if(-not $seen.ContainsKey($item.SourceId+'|'+$item.RelativePath)) {
+            # A previous selected object disappeared or has not yet been scanned. Preserve
+            # both its record and payload; never call the new inventory complete for it.
+            $item.CopyStatus='Failed'
+            $item.VerificationStatus='Pending'
+            $item.Error='Previous selected object was not reached during resumed source inventory.'
+            $manifest.Entries=@($manifest.Entries)+,$item
+        }
+    }
     if (Test-PitrBackupCancelled -Cancellation $Cancellation) { $cancelled = $true }
     if ($cancelled) {
         $manifest = Set-PitrManifestState -Manifest $manifest -State 'Interrupted'
@@ -980,10 +961,13 @@ function Test-PitrBackup {
         if ($entry.CopyStatus -eq 'Failed') { $entry.VerificationStatus = 'Failed'; $failed = $failed + 1; continue }
         if ($entry.CopyStatus -ne 'Copied') { continue }
         $index = $index + 1
-        $destination = Join-Path $generationPath $entry.BackupRelativePath
+        $destination=$null
         $problem = $null
         $hash = $null
-        if ($entry.Type -eq 'Directory') {
+        try { $destination=Resolve-PitrPayloadPath -BackupRoot $generationPath -RelativePath $entry.BackupRelativePath }
+        catch { $problem='Payload boundary: '+$_.Exception.Message }
+        if ($problem) { }
+        elseif ($entry.Type -eq 'Directory') {
             if (-not [IO.Directory]::Exists($destination)) { $problem = 'Recorded backup folder is missing.' }
         } elseif (-not [IO.File]::Exists($destination)) {
             $problem = 'Recorded backup file is missing.'
@@ -1007,7 +991,7 @@ function Test-PitrBackup {
             }
         }
         if ($problem) {
-            if ($entry.VerificationStatus -ne 'FullVerified' -or $Mode -eq 'Full') { $entry.VerificationStatus = 'Failed' }
+            $entry.VerificationStatus = 'Failed'
             $entry.Error = 'Verification: ' + $problem
             $failed = $failed + 1
             Write-PitrBackupLog -Log $log -Message ('FAILED verify ' + $entry.RelativePath + ' : ' + $problem)
@@ -1108,15 +1092,17 @@ function Install-PitrRecoveryPackage {
     try {
         if (-not [IO.Directory]::Exists($recovery)) { $null = [IO.Directory]::CreateDirectory($recovery) }
         $inventory = New-Object 'Collections.Generic.List[object]'
+        $moduleRoot=Join-Path $recovery 'src/backup'
+        $null=[IO.Directory]::CreateDirectory($moduleRoot)
         foreach ($name in $moduleNames) {
             $source = Join-Path (Join-Path $RecoverySource 'src/backup') $name
-            $target = Join-Path $recovery $name
+            $target = Join-Path $moduleRoot $name
             if ([IO.File]::Exists($target)) {
                 $result.Error = ('Refusing to overwrite an existing recovery file: ' + $target)
                 return $result
             }
             Copy-PitrRecoveryFile -Source $source -Target $target
-            $inventory.Add([pscustomobject]@{ Path=$name; Length=([IO.FileInfo]$target).Length; Sha256=(Get-PitrHash -Path $target) })
+            $inventory.Add([pscustomobject]@{ Path=('src/backup/'+$name); Length=([IO.FileInfo]$target).Length; Sha256=(Get-PitrHash -Path $target) })
         }
         $launcherPath = Join-Path $recovery 'Start-Recovery.cmd'
         $readmePath = Join-Path $recovery 'README.txt'
@@ -1190,18 +1176,14 @@ function Get-PitrRecoveryLauncherText {
     $null = $builder.AppendLine('if exist "%PITR_RECOVERY_DIR%..\manifest.json" set "PITR_BACKUP_PROFILE=%PITR_RECOVERY_DIR%.."')
     $null = $builder.AppendLine('if not defined PITR_BACKUP_PROFILE goto :missing')
     $null = $builder.AppendLine('set "PITR_MANIFEST=%PITR_BACKUP_PROFILE%\manifest.json"')
-    $null = $builder.AppendLine('where pwsh.exe >nul 2>nul')
-    $null = $builder.AppendLine('if not errorlevel 1 goto :usepwsh')
+    $null = $builder.AppendLine('rem Windows PowerShell 5.1 is the supported WPF host.')
     $null = $builder.AppendLine('where powershell.exe >nul 2>nul')
     $null = $builder.AppendLine('if not errorlevel 1 goto :usepowershell')
     $null = $builder.AppendLine('echo No PowerShell engine (pwsh.exe or powershell.exe) was found on this computer.')
     $null = $builder.AppendLine('echo The backup stays readable in Explorer; copy the files you need by hand.')
     $null = $builder.AppendLine('exit /b 1')
-    $null = $builder.AppendLine(':usepwsh')
-    $null = $builder.AppendLine('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%PITR_RECOVERY_DIR%Entry.ps1" recover compare --manifest "%PITR_MANIFEST%" %*')
-    $null = $builder.AppendLine('exit /b %errorlevel%')
     $null = $builder.AppendLine(':usepowershell')
-    $null = $builder.AppendLine('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PITR_RECOVERY_DIR%Entry.ps1" recover compare --manifest "%PITR_MANIFEST%" %*')
+    $null = $builder.AppendLine('powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%PITR_RECOVERY_DIR%src\backup\Entry.ps1" recover --gui --manifest "%PITR_MANIFEST%" %*')
     $null = $builder.AppendLine('exit /b %errorlevel%')
     $null = $builder.AppendLine(':missing')
     $null = $builder.AppendLine('echo The recovery package could not find manifest.json next to itself.')

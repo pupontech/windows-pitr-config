@@ -4,6 +4,20 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.1] — private testing build
+
+### Added
+- Independent live-file backup, hash verification, interrupted-job resume, explicit comparison mappings and selective recovery with dry-run/default-keep behavior.
+- Portable recovery launcher, local JSON/CSV/text reports, filtering and explicit conflict controls.
+- Repeatable app-impact warning and no-confirmed-data-backup warning before the separate recovery restart handoff.
+
+### Fixed
+- Payload traversal, static reparse/hard-link boundaries, stale-manifest UI selections, re-verification and interrupted inventory accounting.
+- Replacement rollback through final verification, including preservation if rollback itself is blocked.
+- Windows volume identity isolation from inherited fixture/OS variables, explicit default-No recovery confirmation, and CSV action/rollback evidence.
+
+This entry describes a testing build, not a public release. See TESTING.md for live-Windows/PITR and remaining acceptance limits; exact Windows CI/source evidence is supplied beside the test ZIP.
+
 ## [1.8.2] — 2026-08-31
 
 ### Changed

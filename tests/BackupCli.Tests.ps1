@@ -38,7 +38,15 @@ $base=[IO.Path]::GetTempPath(); if($env:TMPDIR) { $base=$env:TMPDIR }
 $fixture=Join-Path $base ('pitr-e2e-'+[guid]::NewGuid().ToString('N'))
 $profileRoot=Join-Path $fixture 'profiles/Alice'
 $publicRoot=Join-Path $fixture 'profiles/Public'
+$destinationFixtureRoot=$null
 $destination=Join-Path $fixture 'PITR-Backups'
+# Native Windows ignores inherited identity fixtures. Use genuinely separate
+# runner storage for payloads; the OS-volume source remains in normal temp.
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    if (-not $env:RUNNER_TEMP) { throw 'Windows CLI E2E requires separate runner storage in RUNNER_TEMP.' }
+    $destinationFixtureRoot=Join-Path $env:RUNNER_TEMP ('pitr-cli-media-'+[guid]::NewGuid().ToString('N'))
+    $destination=Join-Path $destinationFixtureRoot 'PITR-Backups'
+}
 $utf8=New-Object Text.UTF8Encoding($false)
 $xaml=Join-Path $root 'docs/development'
 foreach($dir in @($profileRoot,(Join-Path $profileRoot 'Documents'),(Join-Path $profileRoot 'AppData/Roaming'),$publicRoot,$destination)) { $null=[IO.Directory]::CreateDirectory($dir) }
@@ -116,7 +124,8 @@ try {
     if(Test-Path -LiteralPath (Join-Path $root 'src/backup/Ui.ps1')) {
         Assert-True $recoveryPresent 'the recovery package is written with the backup'
         Assert-True (Test-Path -LiteralPath (Join-Path $recoveryDir 'Start-Recovery.cmd')) 'the recovery launcher is written'
-        Assert-True (Test-Path -LiteralPath (Join-Path $recoveryDir 'manifest.json')) 'the recovery package carries the manifest'
+        Assert-True (Test-Path -LiteralPath (Join-Path $recoveryDir '../manifest.json')) 'the recovery launcher has its authoritative sibling manifest'
+        Assert-True (Test-Path -LiteralPath (Join-Path $recoveryDir 'src/backup/Entry.ps1')) 'the recovery package retains the application-relative module layout'
     } else {
         Assert-True ((-not $recoveryUsable) -or $recoveryPresent) 'an absent recovery folder is never reported as a usable recovery package'
     }
@@ -162,7 +171,7 @@ try {
     # --- comparison against the current installation
     $deleted=Join-Path $profileRoot 'Documents/report.txt'
     [IO.File]::Delete($deleted)
-    $compare=Invoke-Cli @('recover','compare','--manifest',$manifestPath,'--mapping',($sid + '=' + $profileRoot),'--deep','--format','json') $environment
+    $compare=Invoke-Cli @('recover','compare','--manifest',$manifestPath,'--mapping',($manifest.Sources[0].Id + '=' + $profileRoot),'--deep','--format','json') $environment
     Assert-True ($compare.ExitCode -in @(0,2)) ('comparison runs, exit=' + $compare.ExitCode + ' stderr=' + $compare.Error)
     $comparison=ConvertFrom-JsonOutput $compare.Output
     $rows=@($comparison.Entries)
@@ -174,12 +183,12 @@ try {
     Assert-True ($unchangedRow.Classification -in @('Identical','LikelyIdentical')) ('an unchanged file is reported as identical, got ' + $unchangedRow.Classification)
 
     # --- dry run writes nothing
-    $dryRun=Invoke-Cli @('recover','restore','--manifest',$manifestPath,'--mapping',($sid + '=' + $profileRoot),'--entry',[string]$deletedRow[0].Id,'--dry-run','--format','json') $environment
+    $dryRun=Invoke-Cli @('recover','restore','--manifest',$manifestPath,'--mapping',($manifest.Sources[0].Id + '=' + $profileRoot),'--entry',[string]$deletedRow[0].Id,'--dry-run','--format','json') $environment
     Assert-True ($dryRun.ExitCode -in @(0,2)) ('dry run runs, exit=' + $dryRun.ExitCode + ' stderr=' + $dryRun.Error)
     Assert-True (-not [IO.File]::Exists($deleted)) 'the dry run restored nothing'
 
     # --- real recovery of the missing file, verified by hash
-    $restore=Invoke-Cli @('recover','restore','--manifest',$manifestPath,'--mapping',($sid + '=' + $profileRoot),'--entry',[string]$deletedRow[0].Id,'--execute','--format','json') $environment
+    $restore=Invoke-Cli @('recover','restore','--manifest',$manifestPath,'--mapping',($manifest.Sources[0].Id + '=' + $profileRoot),'--entry',[string]$deletedRow[0].Id,'--execute','--format','json') $environment
     Assert-True ($restore.ExitCode -in @(0,2)) ('recovery runs, exit=' + $restore.ExitCode + ' stderr=' + $restore.Error)
     Assert-True ([IO.File]::Exists($deleted)) 'the missing file was recovered'
     Assert-Equal 'quarterly report' (Get-Content -LiteralPath $deleted -Raw) 'the recovered content is the backed-up content'
@@ -199,4 +208,5 @@ try {
     Write-Output 'Backup CLI end-to-end assertions passed.'
 } finally {
     if([IO.Directory]::Exists($fixture)) { [IO.Directory]::Delete($fixture,$true) }
+    if($destinationFixtureRoot -and [IO.Directory]::Exists($destinationFixtureRoot)) { [IO.Directory]::Delete($destinationFixtureRoot,$true) }
 }

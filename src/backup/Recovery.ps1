@@ -9,35 +9,9 @@
 #      difference observed now.
 
 $script:PitrComparisonClassifications = @('Missing','Different','Identical','LikelyIdentical','CurrentOnly','Unknown')
-$script:PitrSensitiveExtensions = @('.exe','.dll','.scr','.sys','.com','.pif','.bat','.cmd','.ps1','.psm1','.vbs','.vbe','.js','.jse','.wsf','.wsh','.hta','.lnk','.msi','.msp','.reg','.jar')
 $script:PitrMaxCurrentOnlyScan = 200000
 
 function Get-PitrComparisonClassifications { return ,@($script:PitrComparisonClassifications) }
-
-function Test-PitrAdvancedRelativePath {
-    param([string]$RelativePath)
-    $value = $RelativePath.Replace('\','/')
-    foreach ($component in $value.Split('/')) {
-        if ($component -eq 'AppData') { return $true }
-    }
-    return $false
-}
-
-function Test-PitrSensitiveRelativePath {
-    param([string]$RelativePath)
-    $value = $RelativePath.Replace('\','/')
-    $leaf = $value.Split('/')[-1]
-    if ([string]::IsNullOrWhiteSpace($leaf)) { return $false }
-    $name = $leaf.ToLowerInvariant()
-    foreach ($extension in $script:PitrSensitiveExtensions) {
-        if ($name.EndsWith($extension)) { return $true }
-    }
-    $normalized = $value.ToLowerInvariant()
-    foreach ($marker in @('start menu/programs/startup','startup/','/startup')) {
-        if ($normalized.Contains($marker)) { return $true }
-    }
-    return $false
-}
 
 function Test-PitrPathInsideRoot {
     # Containment by canonical path boundary, not by string prefix.
@@ -48,6 +22,23 @@ function Test-PitrPathInsideRoot {
     if (-not $candidateFull.StartsWith($rootFull, [StringComparison]::Ordinal)) { return $false }
     $separator = $candidateFull[$rootFull.Length]
     return ($separator -eq [IO.Path]::DirectorySeparatorChar -or $separator -eq [IO.Path]::AltDirectorySeparatorChar)
+}
+
+function Assert-PitrRecoveryPath {
+    # Revalidate every existing component, including ancestors above the approved root.
+    # Lexical containment alone does not stop a junction from redirecting filesystem writes.
+    [CmdletBinding()]
+    param([Parameter(Mandatory=$true)][string]$Path)
+    $candidate=[IO.Path]::GetFullPath($Path)
+    while(-not [string]::IsNullOrEmpty($candidate)) {
+        try { $attributes=[IO.File]::GetAttributes($candidate) }
+        catch [IO.FileNotFoundException] { $candidate=Split-Path -Parent $candidate; continue }
+        catch [IO.DirectoryNotFoundException] { $candidate=Split-Path -Parent $candidate; continue }
+        if(($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw ('Recovery path contains a reparse point: '+$candidate) }
+        $parent=Split-Path -Parent $candidate
+        if($parent -eq $candidate) { break }
+        $candidate=$parent
+    }
 }
 
 function Get-PitrApprovedRoot {
@@ -138,8 +129,12 @@ function Compare-PitrBackup {
         $relative = [string]$entry.RelativePath
         $backupRelative = [string]$entry.BackupRelativePath
         $backupPath = $null
-        try { $backupPath = [IO.Path]::GetFullPath((Join-Path $backupRoot $backupRelative.Replace('/',[IO.Path]::DirectorySeparatorChar))) }
-        catch { $backupPath = $null }
+        try { $backupPath = Resolve-PitrPayloadPath -BackupRoot $backupRoot -RelativePath $backupRelative }
+        catch {
+            $entries.Add((Get-PitrComparisonEntry -Entry $entry -CurrentPath $null -Classification 'Unknown' -BackupPath $null -Error ('Payload boundary: '+$_.Exception.Message)))
+            $scanComplete=$false
+            continue
+        }
 
         if ([string]$entry.Type -ne 'File') {
             $entries.Add((Get-PitrComparisonEntry -Entry $entry -CurrentPath $null -Classification 'Unknown' -BackupPath $backupPath -Error ('Entry type ' + [string]$entry.Type + ' is not comparable content.')))
@@ -366,18 +361,27 @@ function Restore-PitrFiles {
         }
         $action = [pscustomobject]@{
             EntryId=$id; RelativePath=$row.RelativePath; Action='None'; Destination=$null
-            PreservedPath=$null; Result='Skipped'; VerificationStatus='NotAttempted'; Error=$null
+            PreservedPath=$null; FailedPath=$null; RollbackStatus='NotNeeded'; Result='Skipped'; VerificationStatus='NotAttempted'; Error=$null
         }
         if ($row.Classification -eq 'CurrentOnly') {
             $action.Action='PreserveCurrentOnly'; $action.Error='A file that exists only on the current installation is never a recovery target.'; $complete=$false
             $actions.Add($action); continue
         }
 
+        if ($row.Classification -eq 'Unknown' -and -not $row.BackupSha256) {
+            $action.Action='RefusedUnknown'; $action.Error='The comparison could not classify this entry: ' + [string]$row.Error; $complete=$false
+            $actions.Add($action); continue
+        }
         # Verify the backup copy against what the backup recorded before anything else
         # is decided about it: a changed or unreadable source must never be restored.
         if ($row.BackupPath) {
             $expected = [string]$row.BackupSha256
+            if ([string]::IsNullOrWhiteSpace($expected)) {
+                $action.Action='RefusedBackupUnverified'; $action.Error='The manifest has no recorded SHA-256 for this payload; current bytes cannot establish historical backup integrity.'
+                $complete=$false; $actions.Add($action); continue
+            }
             try {
+                $row.BackupPath=Resolve-PitrPayloadPath -BackupRoot (Split-Path ([IO.Path]::GetFullPath($ManifestPath)) -Parent) -RelativePath $row.BackupRelativePath
                 $actualBackupHash = Get-PitrHash -Path $row.BackupPath
                 if ($expected -and ($actualBackupHash -ne $expected)) {
                     $action.Action='RefusedBackupChanged'; $action.Error='The backup copy does not match the hash recorded in the manifest.'
@@ -456,11 +460,17 @@ function Restore-PitrFiles {
             continue
         }
 
+        $temporary=$null
+        $preserved=$null
+        $originalMoved=$false
         try {
+            Assert-PitrRecoveryPath -Path $target
             if ($Progress) { & $Progress ([pscustomobject]@{ Phase='Recover'; File=$target; FilesProcessed=$actions.Count; TotalFiles=$EntryIds.Count }) }
+            Assert-PitrRecoveryPath -Path $target
             $directory = Split-Path -Parent $target
             if (-not [IO.Directory]::Exists($directory)) { $null=[IO.Directory]::CreateDirectory($directory) }
             $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($target) + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
+            $row.BackupPath=Resolve-PitrPayloadPath -BackupRoot (Split-Path ([IO.Path]::GetFullPath($ManifestPath)) -Parent) -RelativePath $row.BackupRelativePath
             $input = New-Object IO.FileStream($row.BackupPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
             $output = New-Object IO.FileStream($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
             try {
@@ -471,13 +481,14 @@ function Restore-PitrFiles {
                 }
             } finally { $output.Dispose(); $input.Dispose() }
             if ((Get-PitrHash -Path $temporary) -ne $expected) { throw 'The copied file does not match the expected hash.' }
+            Assert-PitrRecoveryPath -Path $target
             if ($replacing) {
                 # Preserve the current bytes first, then swap; restore them if the swap fails.
                 $preserved = Get-PitrConflictPath -Destination $destination -Kind 'replaced' -Stamp $stamp
                 [IO.File]::Move($destination,$preserved)
+                $originalMoved=$true
                 $action.PreservedPath=$preserved
-                try { [IO.File]::Move($temporary,$target) }
-                catch { [IO.File]::Move($preserved,$destination); throw }
+                [IO.File]::Move($temporary,$target)
             } else {
                 [IO.File]::Move($temporary,$target)
             }
@@ -487,6 +498,26 @@ function Restore-PitrFiles {
         } catch {
             $action.Result='Failed'
             $action.Error=$_.Exception.Message
+            if ($originalMoved) {
+                # The transaction includes final verification, not only the swap.
+                # Never discard either the old file or the failed replacement.
+                try {
+                    Assert-PitrRecoveryPath -Path $target
+                    Assert-PitrRecoveryPath -Path $preserved
+                    if ([IO.File]::Exists($target)) {
+                        $failedPath=Get-PitrConflictPath -Destination $target -Kind 'failed' -Stamp $stamp
+                        Assert-PitrRecoveryPath -Path $failedPath
+                        [IO.File]::Move($target,$failedPath)
+                        $action.FailedPath=$failedPath
+                    }
+                    [IO.File]::Move($preserved,$destination)
+                    $action.RollbackStatus='Restored'
+                    $action.Error+=' Original bytes restored to '+$destination+'.'
+                } catch {
+                    $action.RollbackStatus='Failed'
+                    $action.Error+=' ROLLBACK FAILED: '+$_.Exception.Message+' Destination: '+$destination+'; original bytes preserved at: '+$preserved+'.'
+                }
+            }
             $complete=$false
         } finally {
             if ($temporary -and [IO.File]::Exists($temporary)) { try { [IO.File]::Delete($temporary) } catch { } }
@@ -536,21 +567,23 @@ function Export-PitrReport {
     if ($Format -eq 'Json') {
         $text = ($Report | ConvertTo-Json -Depth 8)
     } elseif ($Format -eq 'Csv') {
-        $rows = @($Report.Entries)
-        if ($rows.Count -eq 0) { $rows = @($Report.Actions) }
+        $actionProperty=$Report.PSObject.Properties['Actions']
+        if ($null -ne $actionProperty) {
+            $rows=@($actionProperty.Value)
+            $columns=@('EntryId','RelativePath','Action','Destination','PreservedPath','FailedPath','RollbackStatus','Result','VerificationStatus','Error')
+        } else {
+            $rows=@($Report.Entries)
+            $columns=@('Classification','SourceId','RelativePath','BackupLength','CurrentLength','BackupSha256','CurrentSha256','Error')
+        }
         $lines = New-Object 'Collections.Generic.List[string]'
-        $lines.Add('Classification,SourceId,RelativePath,BackupLength,CurrentLength,BackupSha256,CurrentSha256,Error')
+        $lines.Add(($columns -join ','))
         foreach ($row in $rows) {
-            $fields = @(
-                (ConvertTo-PitrCsvField ([string]$row.Classification)),
-                (ConvertTo-PitrCsvField ([string]$row.SourceId)),
-                (ConvertTo-PitrCsvField ([string]$row.RelativePath)),
-                (ConvertTo-PitrCsvField ([string]$row.BackupLength)),
-                (ConvertTo-PitrCsvField ([string]$row.CurrentLength)),
-                (ConvertTo-PitrCsvField ([string]$row.BackupSha256)),
-                (ConvertTo-PitrCsvField ([string]$row.CurrentSha256)),
-                (ConvertTo-PitrCsvField ([string]$row.Error))
-            )
+            if ($null -eq $row) { continue }
+            $fields=foreach($column in $columns) {
+                $value=$row.PSObject.Properties[$column]
+                if($null -eq $value) { ConvertTo-PitrCsvField '' }
+                else { ConvertTo-PitrCsvField ([string]$value.Value) }
+            }
             $lines.Add(($fields -join ','))
         }
         $text = ($lines -join "`r`n") + "`r`n"

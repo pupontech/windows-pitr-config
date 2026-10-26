@@ -18,6 +18,7 @@ Priority: data safety > correctness/recoverability > regression preservation > u
 10. Expose CLI backup/create/verify/resume/list and recover/compare/restore, JSON/text and JSON/CSV/text reports, stable exit codes, no read-only elevation prompts.
 11. Readiness accounts for backup integrity/completion/destination/recovery package, restore-point availability (unknown is not ready), user access/BitLocker acknowledgement. Existing Windows recovery remains available regardless.
 12. Local logs and privacy warning. No uploads, arbitrary helper downloads, custom crypto, system-wide registry restoration or backed-up executable execution.
+13. Owner-required repeatable warnings: explain potential data loss when continuing toward recovery without using the data-backup option; never treat opening the backup window as evidence of protection. Require explicit risk acknowledgement before the existing separate WinRE restart confirmation, with a safe backup/cancel route. Warn on every application launch that rollback can remove/revert installed apps and file backup does not reinstall them; remind users to close apps for live backup. No remembered dismissal; unattended CLI warns without a blocking modal and keeps machine-readable stdout intact.
 
 ## Decisions
 - Independent full generations first; incremental investigation later, never block full workflow.

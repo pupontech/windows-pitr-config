@@ -24,7 +24,8 @@ function ConvertTo-PitrSafeRelativePath {
     # Rejects anything that could escape the backup root or name an unsafe location.
     param([string]$RelativePath)
     if ([string]::IsNullOrWhiteSpace($RelativePath)) { throw 'Manifest entry has an empty relative path.' }
-    $value = $RelativePath.Replace('\','/').TrimStart('/')
+    $value = $RelativePath.Replace('\','/')
+    if ($value.StartsWith('/')) { throw ('Manifest entry path is rooted: ' + $RelativePath) }
     if ([string]::IsNullOrWhiteSpace($value)) { throw 'Manifest entry has an empty relative path.' }
     if ($value -match '^[A-Za-z]:') { throw ('Manifest entry path is rooted: ' + $RelativePath) }
     if ($value -match '^//' -or $value -match '^\\\\') { throw ('Manifest entry path is a UNC path: ' + $RelativePath) }
@@ -39,6 +40,83 @@ function ConvertTo-PitrSafeRelativePath {
         if ($stem -in @('CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9')) { throw ('Manifest entry path uses a reserved device name: ' + $RelativePath) }
     }
     return $value
+}
+
+function Assert-PitrSingleLink {
+    param([string]$Path)
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        if (-not ('Pitr.PayloadNative' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace Pitr {
+    public static class PayloadNative {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Info {
+            public uint Attributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME Created, Accessed, Written;
+            public uint Serial, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+        }
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern SafeFileHandle CreateFileW(string p, uint a, uint s, IntPtr sa, uint d, uint f, IntPtr t);
+        [DllImport("kernel32.dll", SetLastError=true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(SafeFileHandle h, out Info i);
+        public static uint CountLinks(string path) {
+            using (SafeFileHandle h=CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero)) {
+                Info info;
+                if (h.IsInvalid || !GetFileInformationByHandle(h, out info)) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                return info.Links;
+            }
+        }
+    }
+}
+'@
+        }
+        if ([Pitr.PayloadNative]::CountLinks($Path) -ne 1) { throw ('Payload boundary refuses a hard-linked file: '+$Path) }
+    } else {
+        $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        if ($null -eq $item.PSObject.Properties['LinkType']) { throw 'Payload link identity is unavailable on this host.' }
+        if ($item.LinkType -eq 'HardLink') { throw ('Payload boundary refuses a hard-linked file: '+$Path) }
+    }
+}
+
+function Resolve-PitrPayloadPath {
+    # The manifest is untrusted. Syntax and hashes cannot establish containment.
+    # Static reparse rejection is not a handle-based defense against concurrent swaps.
+    [CmdletBinding()]
+    param([Parameter(Mandatory=$true)][string]$BackupRoot,
+          [Parameter(Mandatory=$true)][string]$RelativePath,[switch]$AllowMissing)
+    $safe=ConvertTo-PitrSafeRelativePath -RelativePath $RelativePath
+    if (-not [IO.Path]::IsPathRooted($BackupRoot)) { throw 'Backup root must be absolute.' }
+    $root=[IO.Path]::GetFullPath($BackupRoot)
+    $candidate=[IO.Path]::GetFullPath((Join-Path $root $safe.Replace('/',[IO.Path]::DirectorySeparatorChar)))
+    $prefix=$root.TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+    if (-not $candidate.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) { throw 'Payload path leaves the backup generation.' }
+    # Check the generation and all existing ancestors, including ancestors above it.
+    $ancestor=$root
+    while ($ancestor) {
+        $attributes=[IO.File]::GetAttributes($ancestor)
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw ('Payload root/ancestor is a reparse point: '+$ancestor) }
+        $parent=[IO.Path]::GetDirectoryName($ancestor)
+        if ($parent -eq $ancestor) { break }
+        $ancestor=$parent
+    }
+    $current=$root
+    $missing=$false
+    foreach ($part in $safe.Split('/')) {
+        if ($part -eq '' -or $part -eq '.') { continue }
+        $current=Join-Path $current $part
+        if ($missing) { continue }
+        try { $attributes=[IO.File]::GetAttributes($current) }
+        catch [IO.FileNotFoundException] { if (-not $AllowMissing) { throw }; $missing=$true; continue }
+        catch [IO.DirectoryNotFoundException] { if (-not $AllowMissing) { throw }; $missing=$true; continue }
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw ('Payload boundary refuses a reparse point: '+$current) }
+    }
+    if (-not $missing -and ($attributes -band [IO.FileAttributes]::Directory) -eq 0) { Assert-PitrSingleLink -Path $candidate }
+    return $candidate
 }
 
 function Test-PitrAdvancedRelativePath {
@@ -96,6 +174,10 @@ function Assert-PitrManifestShape {
             if ($seen.ContainsKey($id)) { throw ('Manifest has a duplicate entry id: ' + $id) }
             $seen[$id] = $true
             $null = ConvertTo-PitrSafeRelativePath -RelativePath ([string](Get-PitrManifestProperty $entry 'RelativePath'))
+            $payloadProperty = $entry.PSObject.Properties['BackupRelativePath']
+            if ($null -ne $payloadProperty) {
+                $null = ConvertTo-PitrSafeRelativePath -RelativePath ([string]$payloadProperty.Value)
+            }
             $type = [string](Get-PitrManifestProperty $entry 'Type')
             if ($script:PitrEntryTypes -notcontains $type) { throw ('Manifest entry has an unknown type: ' + $type) }
             $length = Get-PitrManifestProperty $entry 'Length'

@@ -5,6 +5,7 @@ $exitCode=3
 try {
     . (Join-Path $PSScriptRoot 'Cli.ps1')
     $options=ConvertFrom-PitrCommandLine -Tokens ([string[]]$args)
+    [Console]::Error.WriteLine('WARNING: Rollback can remove or revert apps, drivers and updates installed since the restore point. You may need to reinstall or repair apps. A file backup does not preserve installed apps or reinstall them. Close apps before live backup. Live copies are not application-consistent.')
     if($options.Help) { Write-Output (Get-PitrCommandHelp); exit 0 }
     if($options.Command -eq 'recover' -and $options.Action -eq 'restore' -and -not $options.Gui) {
         if($options.EntryIds.Count -eq 0 -or ($options.Mappings.Count -eq 0 -and -not $options.AlternateRoot)) {
