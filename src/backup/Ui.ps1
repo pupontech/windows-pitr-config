@@ -15,8 +15,9 @@ function Get-PitrBackupXaml {
   </StackPanel>
   <TabControl x:Name="Tabs">
    <TabItem Header="Backup Before Restore"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
-    <TextBlock Text="1. Select data" FontWeight="Bold"/>
-    <ListBox x:Name="Profiles" Height="130" SelectionMode="Multiple" DisplayMemberPath="DisplayName"/>
+    <TextBlock Text="1. All discovered user folders are included by default" FontWeight="Bold"/>
+    <TextBlock Text="Click a selected folder to exclude it. Complete includes the profile tree and AppData where readable. Unreadable profiles must be resolved or explicitly excluded." TextWrapping="Wrap"/>
+    <ListBox x:Name="Profiles" Height="130" SelectionMode="Multiple" DisplayMemberPath="Path"/>
     <ComboBox x:Name="Scope" SelectedIndex="0" Margin="0,8"><ComboBoxItem Content="Complete"/><ComboBoxItem Content="Personal"/><ComboBoxItem Content="Custom"/></ComboBox>
     <TextBlock Text="Custom folders (one absolute path per line). Review redirected personal folders explicitly." TextWrapping="Wrap"/>
     <TextBox x:Name="CustomPaths" Height="60" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
@@ -196,7 +197,7 @@ function Show-PitrBackupUi {
             if($view.Shared.Error) { throw $view.Shared.Error }
             $result=$view.Shared.Result
             switch($view.Kind) {
-                'Discover' { $controls.Profiles.ItemsSource=@($result); $controls.Status.Text='Select profiles. Restore readiness not assessed.' }
+                'Discover' { $controls.Profiles.ItemsSource=@($result); $controls.Profiles.SelectAll(); $controls.Status.Text='All discovered profiles selected. Click a folder to exclude it. Unreadable profiles block backup until resolved or explicitly excluded. Restore readiness not assessed.' }
                 'Mappings' { $view.Mappings=@($result); $controls.Mappings.ItemsSource=$view.Mappings; $controls.Status.Text='Enter approved current roots before comparison.' }
                 'Compare' {
                     $view.Report=$result; $view.Rows=@($result.Entries); $view.SelectedIds=@{}

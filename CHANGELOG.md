@@ -4,6 +4,13 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.2] — private testing build
+
+### Changed
+- Backup GUI includes every discovered profile by default; click a selected folder to exclude it. Exclusions are respected and an empty selection is refused.
+- Show actual profile folder paths instead of binding an absent display-name property. Unreadable registrations are not silently omitted.
+- Regression coverage includes production discovery/click orchestration and native Windows WPF selection.
+
 ## [1.9.0-test.1] — private testing build
 
 ### Added
