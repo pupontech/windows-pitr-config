@@ -1,8 +1,9 @@
 # windows-pitr-config
 
-> **Private testing build 1.9.0-test.4 — backup and selective file recovery**
+> **Private testing build 1.9.0-test.5 — backup and selective file recovery**
 >
-> Extract the complete ZIP and start **pitr-backup.cmd**. Keep its `src` folder beside it;
+> **START HERE: double-click START-HERE.cmd after extracting the complete ZIP.**
+> Keep its `src` folder beside it;
 > this testing build is not the single-file upstream download linked below.
 > Read [TESTING.md](TESTING.md) and the [backup/recovery guide](docs/BACKUP-RECOVERY-GUIDE.md).
 > Rollback is separately operated. Skipping a verified data backup can lose current changes;

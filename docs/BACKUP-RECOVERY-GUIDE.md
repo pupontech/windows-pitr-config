@@ -4,7 +4,7 @@ Status: implementation documentation for the current development tree; not a rel
 
 ## Simple screens
 
-Extract the whole ZIP and launch **pitr-backup.cmd**.
+**START HERE:** Extract the whole ZIP and double-click **START-HERE.cmd** to open the backup/restore window. Keep `src/` beside it. The existing `pitr-backup.cmd` and advanced `pitr-config.cmd` launchers remain available.
 
 Both windows fit their initial width and height to the Windows work area (which already accounts for display scaling and the taskbar). Resize normally: content scrolls instead of shrinking the text, action rows wrap, and the backup/restore Cancel / View details controls remain available. Expanded advanced options and reports use the same main scroll area; View details scrolls the report into view. Testing includes 1080p-equivalent logical layouts at multiple scales, not live switching between monitors with different DPI.
 

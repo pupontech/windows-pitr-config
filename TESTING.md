@@ -4,8 +4,8 @@ This is a testing build, not a claim that every possible bug or live recovery sc
 
 ## Start here
 
-1. Extract the entire ZIP to a normal local folder. Do not run a single CMD copied out of its `src` folder structure.
-2. Double-click **pitr-backup.cmd** to open Backup Before Restore. This entry does not self-elevate. If your account cannot read another profile, use a separately authorized elevated console; never bypass ACLs.
+1. Extract the entire ZIP to a normal local folder. Keep **START-HERE.cmd** and its `src` folder together.
+2. **START HERE: double-click START-HERE.cmd** to open the backup/restore window. The old `pitr-backup.cmd` launcher still works. This entry does not self-elevate. If your account cannot read another profile, use a separately authorized elevated console; never bypass ACLs.
 3. First test with a small disposable Custom folder. Choose a backup destination on a different volume from Windows and your selected source, preferably independent external storage. Same-volume destinations are intentionally refused. Review all skips and errors; success must include full verification, not just copied bytes.
 4. In a disposable copy of your current-data folder, change/delete test files. Select the generated manifest, approve the explicit SourceId mapping, and run deep comparison. Preview selected recovery before Execute. Existing files are kept by default. Replace is explicit and preserves the current version; recovery reports must be inspected.
 5. Test the backup generation's `recovery/Start-Recovery.cmd` after moving the generation to accessible media. Keep its entire generation directory intact. Ordinary files remain readable in Explorer even without this tool.

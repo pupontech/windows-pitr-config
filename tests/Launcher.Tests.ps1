@@ -1,5 +1,9 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
+$startHere=Join-Path $root 'START-HERE.cmd'
+if(-not [IO.File]::Exists($startHere)) { throw 'RED: obvious START-HERE.cmd entrypoint is missing.' }
+if([Convert]::ToBase64String([IO.File]::ReadAllBytes($startHere)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root 'pitr-backup.cmd')))) { throw 'START-HERE must use the same direct trusted entrypoint as pitr-backup.cmd.' }
+if($env:OS -eq 'Windows_NT') { & $startHere --help; if($LASTEXITCODE -ne 0) { throw 'Actual START-HERE launcher failed.' } }
 $path=Join-Path $root 'pitr-backup.cmd'
 if(-not [IO.File]::Exists($path)) { throw 'RED: portable CMD launcher not implemented' }
 $bytes=[IO.File]::ReadAllBytes($path)

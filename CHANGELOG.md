@@ -4,6 +4,12 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.5] — private testing build
+
+### Changed
+- Added the obvious **START-HERE.cmd** root launcher and updated the first-run instructions to say **START HERE**. It opens the same backup/restore UI through the same direct PowerShell entrypoint; older launchers remain available.
+- Portable build and Windows extraction gates now require and exercise START-HERE.cmd.
+
 ## [1.9.0-test.4] — private testing build
 
 ### Fixed

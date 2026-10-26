@@ -55,13 +55,15 @@ jobs:
           $expected=@($inventory.Files | ForEach-Object { $_.Path } | Sort-Object)
           $actual=@(Get-ChildItem -LiteralPath $expanded -Recurse -File | ForEach-Object { $_.FullName.Substring($expanded.Length+1).Replace('\','/') } | Where-Object { $_ -ne 'package-integrity.json' } | Sort-Object)
           if (@(Compare-Object $expected $actual).Count -ne 0) { throw 'ZIP inventory member set mismatch' }
-          foreach($required in @('TESTING.md','docs/BACKUP-RECOVERY-GUIDE.md','src/backup/Ui.ps1')) {
+          foreach($required in @('START-HERE.cmd','TESTING.md','docs/BACKUP-RECOVERY-GUIDE.md','src/backup/Ui.ps1')) {
             if (-not (Test-Path -LiteralPath (Join-Path $expanded $required))) { throw ('Testing ZIP missing '+$required) }
           }
           foreach($file in $inventory.Files) {
             $path=Join-Path $expanded $file.Path
             if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $file.Sha256) { throw ('Packaged hash mismatch: '+$file.Path) }
           }
+          & (Join-Path $expanded 'START-HERE.cmd') --help
+          if($LASTEXITCODE -ne 0) { throw 'Extracted START-HERE launcher help failed' }
           & (Join-Path $expanded 'pitr-backup.cmd') --help
           if($LASTEXITCODE -ne 0) { throw 'Extracted portable launcher help failed' }
           & (Join-Path $expanded 'pitr-config.cmd') selftest
