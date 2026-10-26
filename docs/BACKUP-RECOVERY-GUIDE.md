@@ -6,6 +6,8 @@ Status: implementation documentation for the current development tree; not a rel
 
 Extract the whole ZIP and launch **pitr-backup.cmd**.
 
+Both windows fit their initial width and height to the Windows work area (which already accounts for display scaling and the taskbar). Resize normally: content scrolls instead of shrinking the text, action rows wrap, and the backup/restore Cancel / View details controls remain available. Expanded advanced options and reports use the same main scroll area; View details scrolls the report into view. Testing includes 1080p-equivalent logical layouts at multiple scales, not live switching between monitors with different DPI.
+
 ### Back up files
 
 1. Choose a folder on separate storage, preferably an external drive. The Windows volume is refused.

@@ -1,27 +1,38 @@
 # Presentation helpers load without WPF so worker orchestration is testable offline.
+function Get-PitrUiWindowBounds {
+    [CmdletBinding()]
+    param([double]$WorkWidth,[double]$WorkHeight,[double]$PreferredWidth=980,[double]$PreferredHeight=740)
+    if([double]::IsNaN($WorkWidth) -or [double]::IsInfinity($WorkWidth) -or $WorkWidth -le 0 -or
+       [double]::IsNaN($WorkHeight) -or [double]::IsInfinity($WorkHeight) -or $WorkHeight -le 0) { throw 'A finite positive logical work area is required.' }
+    $maxWidth=[Math]::Max(1,[Math]::Floor($WorkWidth-24))
+    $maxHeight=[Math]::Max(1,[Math]::Floor($WorkHeight-24))
+    [pscustomobject]@{
+        Width=[Math]::Min($PreferredWidth,$maxWidth);Height=[Math]::Min($PreferredHeight,$maxHeight)
+        MinWidth=[Math]::Min(560,[Math]::Min($PreferredWidth,$maxWidth))
+        MinHeight=[Math]::Min(360,[Math]::Min($PreferredHeight,$maxHeight))
+        MaxWidth=$maxWidth;MaxHeight=$maxHeight
+    }
+}
+
 function Get-PitrBackupXaml {
 @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Backup and Recovery" Width="980" Height="740" MinWidth="680" MinHeight="520" WindowStartupLocation="CenterScreen">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Backup and Recovery" Width="980" Height="740" MinWidth="560" MinHeight="360" FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" WindowStartupLocation="CenterScreen">
  <DockPanel Margin="16">
   <DockPanel.Resources>
-   <Style TargetType="Button"><Setter Property="Margin" Value="0,4,8,4"/><Setter Property="Padding" Value="12,6"/></Style>
+   <Style TargetType="Button"><Setter Property="Margin" Value="0,4,8,4"/><Setter Property="Padding" Value="12,6"/><Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/></DataTemplate></Setter.Value></Setter></Style>
+   <Style TargetType="CheckBox"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter></Style>
+   <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
    <Style TargetType="Expander"><Setter Property="Margin" Value="0,8,0,4"/></Style>
   </DockPanel.Resources>
-  <StackPanel DockPanel.Dock="Top">
+  <WrapPanel x:Name="ActionFooter" DockPanel.Dock="Bottom"><Button x:Name="CancelWork" Content="Cancel operation" IsEnabled="False"/><Button x:Name="ShowDetails" Content="View details"/></WrapPanel>
+  <ScrollViewer x:Name="MainScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False"><StackPanel>
+  <StackPanel>
    <TextBlock x:Name="ApplicationWarning" TextWrapping="Wrap" FontWeight="Bold" Margin="0,0,0,8" Text="Warning: rollback can remove or revert apps, drivers and updates installed since the restore point. You may need to reinstall or repair apps. A file backup does not preserve installed apps or reinstall them. Close apps before live backup."/>
    <TextBlock TextWrapping="Wrap" Margin="0,0,0,8" Text="Live copies are not application-consistent. Close applications first. Review cloud placeholders and EFS limitations. Keep BitLocker keys separately. Reports contain private filenames. This tool never starts PITR."/>
    <TextBlock x:Name="Status" Text="Restore readiness: not assessed" TextWrapping="Wrap" Margin="0,0,0,8"/>
   </StackPanel>
-  <StackPanel DockPanel.Dock="Bottom">
-   <StackPanel Orientation="Horizontal"><Button x:Name="CancelWork" Content="Cancel operation" IsEnabled="False"/><Button x:Name="ShowDetails" Content="View details"/></StackPanel>
-   <Expander x:Name="DetailsPanel" Header="Details and reports" IsExpanded="False">
-    <StackPanel><TextBox x:Name="DetailsText" Height="100" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-     <StackPanel Orientation="Horizontal"><ComboBox x:Name="ExportFormat" SelectedIndex="0" Width="90"><ComboBoxItem Content="Json"/><ComboBoxItem Content="Csv"/><ComboBoxItem Content="Text"/></ComboBox><Button x:Name="ExportReport" Content="Save report"/></StackPanel>
-    </StackPanel>
-   </Expander>
-  </StackPanel>
   <TabControl x:Name="Tabs">
-   <TabItem Header="Back up files"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+   <TabItem Header="Back up files"><StackPanel Margin="12">
     <TextBlock Text="Back up every user's files" FontSize="20" FontWeight="Bold"/>
     <TextBlock Text="All discovered user folders are included, with AppData where readable. Close apps before starting. Verification runs automatically." TextWrapping="Wrap" Margin="0,8"/>
     <TextBlock Text="1. Where should the backup be saved?" FontWeight="Bold"/>
@@ -39,8 +50,8 @@ function Get-PitrBackupXaml {
     </StackPanel></Expander>
     <TextBlock Text="2. Start the backup" FontWeight="Bold" Margin="0,12,0,4"/>
     <Button x:Name="StartBackup" Content="Start backup" HorizontalAlignment="Left"/>
-   </StackPanel></ScrollViewer></TabItem>
-   <TabItem Header="Restore files"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+   </StackPanel></TabItem>
+   <TabItem Header="Restore files"><StackPanel Margin="12">
     <TextBlock Text="Restore missing files" FontSize="20" FontWeight="Bold"/>
     <TextBlock Text="Existing files are kept. No files are written until you review a preview and confirm restoration." TextWrapping="Wrap" Margin="0,8"/>
     <TextBlock Text="1. Choose the dated backup folder" FontWeight="Bold"/>
@@ -55,7 +66,7 @@ function Get-PitrBackupXaml {
     <TextBlock Text="3. Review the selected files, preview, then restore" FontWeight="Bold"/>
     <TextBlock Text="Missing personal files are selected automatically. AppData and executable/startup files are not selected automatically." TextWrapping="Wrap"/>
     <DataGrid x:Name="Results" Height="160" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="Status" Binding="{Binding Classification}"/><DataGridTextColumn Header="File" Binding="{Binding RelativePath}" Width="*"/><DataGridTextColumn Header="Advanced" Binding="{Binding IsAdvanced}"/><DataGridTextColumn Header="Problem" Binding="{Binding Error}" Width="*"/></DataGrid.Columns></DataGrid>
-    <StackPanel Orientation="Horizontal"><Button x:Name="PreviewRecovery" Content="Preview restore"/><Button x:Name="RecoverFiles" Content="Restore selected files..."/></StackPanel>
+    <WrapPanel><Button x:Name="PreviewRecovery" Content="Preview restore"/><Button x:Name="RecoverFiles" Content="Restore selected files..."/></WrapPanel>
     <Expander Header="Advanced restore options" IsExpanded="False"><StackPanel>
      <TextBlock Text="Existing files: Skip keeps them, Alongside makes a separate copy, Replace preserves the current file before replacing it. Preview again after changes." TextWrapping="Wrap"/>
      <ComboBox x:Name="ConflictPolicy" SelectedIndex="0" Width="130" HorizontalAlignment="Left"><ComboBoxItem Content="Skip"/><ComboBoxItem Content="Alongside"/><ComboBoxItem Content="Replace"/></ComboBox>
@@ -67,8 +78,14 @@ function Get-PitrBackupXaml {
      <DockPanel><Button x:Name="BrowseManifest" Content="Open manifest..." DockPanel.Dock="Right"/><TextBox x:Name="ManifestPath"/></DockPanel>
      <WrapPanel><Button x:Name="VerifyBackup" Content="Check backup again"/><Button x:Name="LoadMappings" Content="Reload folders"/><Button x:Name="CompareBackup" Content="Compare all files"/></WrapPanel>
     </StackPanel></Expander>
-   </StackPanel></ScrollViewer></TabItem>
+   </StackPanel></TabItem>
   </TabControl>
+  <Expander x:Name="DetailsPanel" Header="Details and reports" IsExpanded="False">
+   <StackPanel><TextBox x:Name="DetailsText" Height="100" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+    <WrapPanel><ComboBox x:Name="ExportFormat" SelectedIndex="0" Width="90"><ComboBoxItem Content="Json"/><ComboBoxItem Content="Csv"/><ComboBoxItem Content="Text"/></ComboBox><Button x:Name="ExportReport" Content="Save report"/></WrapPanel>
+   </StackPanel>
+  </Expander>
+  </StackPanel></ScrollViewer>
  </DockPanel>
 </Window>
 '@
@@ -141,6 +158,16 @@ function Show-PitrBackupUi {
     [xml]$xml=Get-PitrBackupXaml
     $reader=New-Object Xml.XmlNodeReader($xml)
     try { $window=[Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Dispose() }
+    # WPF WorkArea is already in logical units; multiplying by DPI again makes
+    # a 1080p/200% desktop overflow. Clamp both dimensions before showing it.
+    $workArea=[Windows.SystemParameters]::WorkArea
+    $bounds=Get-PitrUiWindowBounds -WorkWidth $workArea.Width -WorkHeight $workArea.Height
+    $window.MinWidth=$bounds.MinWidth; $window.MinHeight=$bounds.MinHeight
+    $window.MaxWidth=$bounds.MaxWidth; $window.MaxHeight=$bounds.MaxHeight
+    $window.Width=$bounds.Width; $window.Height=$bounds.Height
+    $window.WindowStartupLocation='Manual'
+    $window.Left=$workArea.Left+($workArea.Width-$bounds.Width)/2
+    $window.Top=$workArea.Top+($workArea.Height-$bounds.Height)/2
     $controls=@{}
     foreach($node in $xml.SelectNodes('//*[@*[local-name()="Name"]]')) {
         $name=$node.GetAttribute('Name','http://schemas.microsoft.com/winfx/2006/xaml')
@@ -199,6 +226,8 @@ function Show-PitrBackupUi {
     $controls.ShowDetails.Add_Click({
         $controls.DetailsText.Text=Get-PitrUiReportDetails -Report $view.Report -Status $controls.Status.Text
         $controls.DetailsPanel.IsExpanded=$true
+        $window.UpdateLayout()
+        $controls.DetailsPanel.BringIntoView()
     })
     $controls.BrowseDestination.Add_Click({
         $dialog=New-Object Windows.Forms.FolderBrowserDialog

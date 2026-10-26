@@ -4,6 +4,17 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.4] — private testing build
+
+### Fixed
+- Main and backup/restore startup dimensions are bounded to the Windows logical work area in both directions; minimum dimensions no longer force the window beyond a scaled 1080p desktop.
+- Warnings, tabs and expanded reports share a single scrolling backup/restore viewport, so tall content cannot squeeze the workflow out of reach. Cancel and View details remain outside that viewport.
+- Action rows and backup/restore captions wrap on narrower windows; the main window's Apply/Refresh/Reset row no longer overflows horizontally. View details scrolls the report into view.
+
+### Tests
+- Added sizing/parity and real WPF geometry/capture checks for 1080p-equivalent logical work areas at 100/125/150/175/200/250%, including compact resizing and expanded advanced panels.
+- These layout simulations do not establish live per-monitor DPI switching or every Windows accessibility/text-size combination.
+
 ## [1.9.0-test.3] — private testing build
 
 ### Changed

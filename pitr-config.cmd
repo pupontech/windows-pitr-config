@@ -178,7 +178,7 @@ $ErrorActionPreference = 'Stop'
 # The one place the version is defined. It appears under the headline in the window
 # and in the selftest; a release is tagged with "v" followed by this value. Keeping
 # it out of the batch header above avoids having two numbers that can drift apart.
-$Version  = '1.9.0-test.3'
+$Version  = '1.9.0-test.4'
 
 # Asked on start unless PITR_NOUPDATE is set. Returns the newest release of the project.
 $UpdateApi = 'https://api.github.com/repos/henmedia/windows-pitr-config/releases/latest'
@@ -2404,10 +2404,26 @@ function Get-PitrSupport {
 }
 
 # --------------------------------------------------------------- User interface --
+# Keep the standalone launcher independent of optional backup modules. The pure
+# sizing policy below is parity-tested against src/backup/Ui.ps1.
+function Get-PitrUiWindowBounds {
+    [CmdletBinding()]
+    param([double]$WorkWidth,[double]$WorkHeight,[double]$PreferredWidth=980,[double]$PreferredHeight=740)
+    if([double]::IsNaN($WorkWidth) -or [double]::IsInfinity($WorkWidth) -or $WorkWidth -le 0 -or
+       [double]::IsNaN($WorkHeight) -or [double]::IsInfinity($WorkHeight) -or $WorkHeight -le 0) { throw 'A finite positive logical work area is required.' }
+    $maxWidth=[Math]::Max(1,[Math]::Floor($WorkWidth-24))
+    $maxHeight=[Math]::Max(1,[Math]::Floor($WorkHeight-24))
+    [pscustomobject]@{
+        Width=[Math]::Min($PreferredWidth,$maxWidth);Height=[Math]::Min($PreferredHeight,$maxHeight)
+        MinWidth=[Math]::Min(560,[Math]::Min($PreferredWidth,$maxWidth))
+        MinHeight=[Math]::Min(360,[Math]::Min($PreferredHeight,$maxHeight))
+        MaxWidth=$maxWidth;MaxHeight=$maxHeight
+    }
+}
 $xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Width="900" Height="800" MinWidth="800" MinHeight="440"
+        Width="900" Height="800" MinWidth="560" MinHeight="360" UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize" Background="#F5F5F5"
         FontFamily="Segoe UI" FontSize="13">
@@ -2456,8 +2472,8 @@ $xaml = @'
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <StackPanel Grid.Column="0">
-        <TextBlock x:Name="TxtHead" FontSize="20" FontWeight="SemiBold"/>
-        <TextBlock x:Name="TxtSub" FontSize="13" Foreground="#777" Margin="0,1,0,0"/>
+        <TextBlock x:Name="TxtHead" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock x:Name="TxtSub" FontSize="13" Foreground="#777" Margin="0,1,0,0" TextWrapping="Wrap"/>
         <!-- Sitzt bewusst oberhalb der ScrollViewer-Falz: Das Fenster oeffnet zunaechst
              gedeckelt und waechst erst nach dem ersten Laden auf seine volle Hoehe, das
              Protokoll ganz unten ist in dieser Zeit also nicht zu sehen. Diese Zeile hier
@@ -2808,19 +2824,12 @@ $xaml = @'
       </Grid>
     </GroupBox>
 
-    <Grid Margin="0,0,0,10">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-      <Button x:Name="BtnReset" Grid.Column="0" Width="170" Height="30" HorizontalAlignment="Left"/>
-      <StackPanel Grid.Column="2" Orientation="Horizontal">
-        <Button x:Name="BtnRefresh"  Width="120" Height="30" Margin="0,0,8,0"/>
-        <Button x:Name="BtnApply"    Width="130" Height="30" Margin="0,0,8,0"/>
-        <Button x:Name="BtnApplyNow" Width="230" Height="30"/>
-      </StackPanel>
-    </Grid>
+    <WrapPanel x:Name="MainActions" Margin="0,0,0,10">
+      <Button x:Name="BtnReset" MinWidth="170" MinHeight="30" Padding="10,4" Margin="0,0,8,6"/>
+      <Button x:Name="BtnRefresh" MinWidth="120" MinHeight="30" Padding="10,4" Margin="0,0,8,6"/>
+      <Button x:Name="BtnApply" MinWidth="130" MinHeight="30" Padding="10,4" Margin="0,0,8,6"/>
+      <Button x:Name="BtnApplyNow" MinWidth="230" MinHeight="30" Padding="10,4" Margin="0,0,0,6"/>
+    </WrapPanel>
 
     <GroupBox x:Name="GrpBackup" Padding="8" Margin="0,0,0,10">
       <WrapPanel>
@@ -4028,9 +4037,13 @@ foreach ($n in 'TxtSupport','TxtEdition','TxtLast','TxtNext','TxtDelta','TxtTask
 # den Kanten klebt. 800 Pixel sind die Obergrenze fuer den Normalfall; auf einem hohen
 # Bildschirm darf das Fenster darueber hinaus wachsen, aber nie ueber die Arbeitsflaeche.
 $workArea = [System.Windows.SystemParameters]::WorkArea
-$reserve  = 56
-$window.MaxHeight = [math]::Max(440, [math]::Floor($workArea.Height - $reserve))
-$window.Height    = [math]::Min($window.MaxHeight, 800)
+$bounds = Get-PitrUiWindowBounds -WorkWidth $workArea.Width -WorkHeight $workArea.Height -PreferredWidth 900 -PreferredHeight 800
+$window.MinWidth=$bounds.MinWidth; $window.MinHeight=$bounds.MinHeight
+$window.MaxWidth=$bounds.MaxWidth; $window.MaxHeight=$bounds.MaxHeight
+$window.Width=$bounds.Width; $window.Height=$bounds.Height
+$window.WindowStartupLocation='Manual'
+$window.Left=$workArea.Left+($workArea.Width-$bounds.Width)/2
+$window.Top=$workArea.Top+($workArea.Height-$bounds.Height)/2
 
 # Erst nach dem ersten Zeichnen steht fest, wie hoch der Inhalt tatsaechlich ist. Passt er
 # ohne Rollbalken und laesst der Bildschirm es zu, waechst das Fenster darauf.
