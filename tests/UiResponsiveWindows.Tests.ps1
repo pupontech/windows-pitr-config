@@ -11,12 +11,14 @@ try {
         function Assert($ok,[string]$why) { if(-not $ok) { throw $why } }
         function Visuals($parent) {
             $stack=New-Object 'Collections.Generic.Stack[Windows.DependencyObject]'
+            $found=New-Object 'Collections.Generic.List[object]'
             $stack.Push($parent)
             while($stack.Count -gt 0) {
                 $node=$stack.Pop()
-                Write-Output -NoEnumerate $node
+                $found.Add($node)
                 for($i=0;$i -lt [Windows.Media.VisualTreeHelper]::GetChildrenCount($node);$i++) { $stack.Push([Windows.Media.VisualTreeHelper]::GetChild($node,$i)) }
             }
+            return $found.ToArray()
         }
         function Reach($window,$scroll,$target,[string]$tag) {
             Assert ($null -ne $target) ('Missing target '+$tag)
@@ -30,6 +32,14 @@ try {
                 $s=$target.TranslatePoint([Windows.Point]::new(0,0),$scroll)
                 Assert ($s.Y -ge -1 -and $s.Y+$target.ActualHeight -le $scroll.ActualHeight+1) ('Target clipped by scroll viewport: '+$tag+' y='+$s.Y+' h='+$target.ActualHeight+' viewport='+$scroll.ActualHeight)
             }
+        }
+        function CaptionFits($window,$button,[string]$tag) {
+            $captions=@(Visuals $button | Where-Object { $_ -is [Windows.Controls.TextBlock] -and $_.Text -eq [string]$button.Content })
+            Assert ($captions.Count -eq 1) ('Caption template not found: '+$tag)
+            $caption=$captions[0]
+            Assert ($caption.TextWrapping -eq [Windows.TextWrapping]::Wrap -and $caption.ActualHeight -gt $button.FontSize*1.5) ('Long caption does not wrap: '+$tag)
+            $p=$caption.TranslatePoint([Windows.Point]::new(0,0),$button)
+            Assert ($p.X -ge -1 -and $p.Y -ge -1 -and $p.X+$caption.ActualWidth -le $button.ActualWidth+1 -and $p.Y+$caption.ActualHeight -le $button.ActualHeight+1) ('Caption is clipped inside its button: '+$tag)
         }
         function Screenshot($window,[string]$path,[double]$scale) {
             $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int][Math]::Ceiling($window.ActualWidth*$scale),[int][Math]::Ceiling($window.ActualHeight*$scale),96*$scale,96*$scale,[Windows.Media.PixelFormats]::Pbgra32)
@@ -66,20 +76,28 @@ try {
                     $window.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::ApplicationIdle)
                     Assert ($window.ActualWidth -le 1920/$scale+1 -and $window.ActualHeight -le 1040/$scale+1) ('Actual startup bounds exceed 1080p logical work area: '+$surface+' scale='+$scale)
                     foreach($compact in @($false,$true)) {
-                        if($compact) { $window.Width=$b.MinWidth;$window.Height=$b.MinHeight;$window.UpdateLayout() }
+                        if($compact) {
+                            $window.Width=$b.MinWidth;$window.Height=$b.MinHeight
+                            $longCaption='Restore the selected files for every user while preserving existing documents and reviewing any reported problems before proceeding'
+                            if($surface -eq 'Backup') { $window.FindName('RecoverFiles').Content=$longCaption }
+                            else { $window.FindName('BtnApplyNow').Content=$longCaption }
+                            $window.UpdateLayout()
+                        }
                         if($surface -eq 'Backup') {
                             $scroll=$window.FindName('MainScroll')
                             foreach($tab in @(0,1)) {
                                 $window.FindName('Tabs').SelectedIndex=$tab;$window.UpdateLayout()
                                 # Exercise expanded folders, advanced options and details;
                                 # they must scroll, never squeeze the tab viewport to zero.
-                                foreach($expander in @(Visuals $window | Where-Object { $_ -is [Windows.Controls.Expander] })) { $expander.IsExpanded=$true }
+                                foreach($name in @('BackupFolders','AdvancedBackupOptions','AdvancedRestoreOptions','DetailsPanel')) { $window.FindName($name).IsExpanded=$true }
                                 $window.UpdateLayout()
+                                Assert ($window.FindName('DetailsPanel').IsExpanded) 'Test setup failed to expand DetailsPanel.'
                                 Assert ($scroll.ViewportHeight -gt 40) 'Expanded details consumed the whole content viewport.'
                                 foreach($name in $(if($tab -eq 0){@('ApplicationWarning','StartBackup','ExportReport')}else{@('ChooseBackup','MappingsApproved','FindMissing','PreviewRecovery','RecoverFiles','ExportReport')})) {
                                     Reach $window $scroll ($window.FindName($name)) ($surface+'/'+$scale+'/'+$compact+'/'+$name);$checks++
                                 }
                                 foreach($name in @('CancelWork','ShowDetails')) { Reach $window $null ($window.FindName($name)) ('footer/'+$name);$checks++ }
+                                if($compact -and $tab -eq 1) { CaptionFits $window ($window.FindName('RecoverFiles')) 'backup/compact-long-caption' }
                                 if(-not $compact -and $scale -in @(1.0,1.5,2.0)) {
                                     Reach $window $scroll ($window.FindName($(if($tab -eq 0){'StartBackup'}else{'RecoverFiles'}))) 'capture'
                                     Screenshot $window (Join-Path $proof ('responsive-'+$surface+'-tab'+$tab+'-'+[int]($scale*100)+'.png')) $scale
@@ -90,6 +108,7 @@ try {
                             foreach($name in @('BtnSnapNow','BtnReset','BtnRefresh','BtnApply','BtnApplyNow','BtnBackupBefore','BtnBackupRecover','BtnCopy')) {
                                 Reach $window $scroll ($window.FindName($name)) ($surface+'/'+$scale+'/'+$compact+'/'+$name);$checks++
                             }
+                            if($compact) { CaptionFits $window ($window.FindName('BtnApplyNow')) 'main/compact-long-caption' }
                             if(-not $compact -and $scale -in @(1.0,1.5,2.0)) {
                                 Reach $window $scroll ($window.FindName('BtnApplyNow')) 'capture'
                                 Screenshot $window (Join-Path $proof ('responsive-Main-'+[int]($scale*100)+'.png')) $scale

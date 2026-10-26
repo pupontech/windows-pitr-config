@@ -29,6 +29,9 @@ $uiAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'src/
 $backupHelper=$uiAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-PitrUiWindowBounds'},$true).Extent.Text
 Assert ($mainHelper.Replace("`r`n","`n") -ceq $backupHelper.Replace("`r`n","`n")) 'Standalone and backup sizing policies must not drift.'
 Assert ($cmd.Contains('x:Name="MainActions"')) 'Main action row must have a responsive wrapping layout.'
+[xml]$mainXml=[regex]::Match($cmd,'(?ms)^\$xaml = @''\r?\n(?<xaml>.*?)^''@').Groups['xaml'].Value
+$mainButtonStyle=$mainXml.SelectSingleNode('//*[local-name()="Style" and @TargetType="Button" and not(@*[local-name()="Key"]) ]')
+Assert ($null -ne $mainButtonStyle -and $null -ne $mainButtonStyle.SelectSingleNode('.//*[local-name()="TextBlock" and @TextWrapping="Wrap"]')) 'RED: main action captions need a wrapping template, not only a wrapping row.'
 $detailsHandler=$uiAst.Find({param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Extent.Text.StartsWith('$controls.ShowDetails.Add_Click(')},$true)
 $text=$detailsHandler.Arguments[0].ScriptBlock.Extent.Text.Trim();$click=[scriptblock]::Create($text.Substring(1,$text.Length-2))
 $script:detailsReached=$false

@@ -2428,6 +2428,10 @@ $xaml = @'
         ResizeMode="CanResize" Background="#F5F5F5"
         FontFamily="Segoe UI" FontSize="13">
   <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type WrapPanel}}}"/>
+      <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/></DataTemplate></Setter.Value></Setter>
+    </Style>
     <!-- Ein normaler WPF-Knopf nimmt zwar ein Background an, malt beim Ueberfahren aber
          wieder den Systemverlauf darueber. Fuer den einen hervorgehobenen Knopf deshalb
          eine eigene Vorlage; drei Zustaende genuegen ihm. -->

@@ -19,7 +19,7 @@ function Get-PitrBackupXaml {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Backup and Recovery" Width="980" Height="740" MinWidth="560" MinHeight="360" FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" WindowStartupLocation="CenterScreen">
  <DockPanel Margin="16">
   <DockPanel.Resources>
-   <Style TargetType="Button"><Setter Property="Margin" Value="0,4,8,4"/><Setter Property="Padding" Value="12,6"/><Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/></DataTemplate></Setter.Value></Setter></Style>
+   <Style TargetType="Button"><Setter Property="Margin" Value="0,4,8,4"/><Setter Property="Padding" Value="12,6"/><Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type WrapPanel}}}"/><Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"/></DataTemplate></Setter.Value></Setter></Style>
    <Style TargetType="CheckBox"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter></Style>
    <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
    <Style TargetType="Expander"><Setter Property="Margin" Value="0,8,0,4"/></Style>
@@ -42,7 +42,7 @@ function Get-PitrBackupXaml {
      <TextBlock Text="Click a selected user folder to exclude it. Unreadable profiles must be resolved or explicitly excluded. Review redirected and cloud folders separately." TextWrapping="Wrap"/>
      <ListBox x:Name="Profiles" Height="130" SelectionMode="Multiple" DisplayMemberPath="Path"/>
     </StackPanel></Expander>
-    <Expander Header="Advanced backup options" IsExpanded="False"><StackPanel>
+    <Expander x:Name="AdvancedBackupOptions" Header="Advanced backup options" IsExpanded="False"><StackPanel>
      <TextBlock Text="Complete: entire profiles. Personal: conventional personal folders only. Custom: only the explicit paths below." TextWrapping="Wrap"/>
      <ComboBox x:Name="Scope" SelectedIndex="0"><ComboBoxItem Content="Complete"/><ComboBoxItem Content="Personal"/><ComboBoxItem Content="Custom"/></ComboBox>
      <TextBlock Text="Additional folders (one absolute path per line); Custom uses only these paths." TextWrapping="Wrap"/>
@@ -67,7 +67,7 @@ function Get-PitrBackupXaml {
     <TextBlock Text="Missing personal files are selected automatically. AppData and executable/startup files are not selected automatically." TextWrapping="Wrap"/>
     <DataGrid x:Name="Results" Height="160" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="Status" Binding="{Binding Classification}"/><DataGridTextColumn Header="File" Binding="{Binding RelativePath}" Width="*"/><DataGridTextColumn Header="Advanced" Binding="{Binding IsAdvanced}"/><DataGridTextColumn Header="Problem" Binding="{Binding Error}" Width="*"/></DataGrid.Columns></DataGrid>
     <WrapPanel><Button x:Name="PreviewRecovery" Content="Preview restore"/><Button x:Name="RecoverFiles" Content="Restore selected files..."/></WrapPanel>
-    <Expander Header="Advanced restore options" IsExpanded="False"><StackPanel>
+    <Expander x:Name="AdvancedRestoreOptions" Header="Advanced restore options" IsExpanded="False"><StackPanel>
      <TextBlock Text="Existing files: Skip keeps them, Alongside makes a separate copy, Replace preserves the current file before replacing it. Preview again after changes." TextWrapping="Wrap"/>
      <ComboBox x:Name="ConflictPolicy" SelectedIndex="0" Width="130" HorizontalAlignment="Left"><ComboBoxItem Content="Skip"/><ComboBoxItem Content="Alongside"/><ComboBoxItem Content="Replace"/></ComboBox>
      <TextBlock Text="Optional alternate recovery folder (must already exist):"/><TextBox x:Name="AlternateRoot"/>
