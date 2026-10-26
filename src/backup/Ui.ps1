@@ -149,7 +149,7 @@ function Show-PitrBackupUi {
     . (Join-Path $ApplicationRoot 'src/backup/Localization.ps1')
     $labels=Get-PitrBackupLabels -Language $Language
     foreach($key in $labels.Keys) { if($controls.ContainsKey($key)) { $controls[$key].Content=$labels[$key] } }
-    $view=@{Job=$null;Shared=$null;Kind='';Report=$null;Rows=@();Mappings=@();SelectedIds=@{};Filtering=$false;Generation=0;PreviewContext=$null;PendingPreviewContext=$null;PendingPrepare=([bool]$ManifestPath);PublishingBackup=$false}
+    $view=@{Job=$null;Shared=$null;Kind='';Report=$null;Rows=@();Mappings=@();SelectedIds=@{};Filtering=$false;Generation=0;PreviewContext=$null;PendingPreviewContext=$null;PendingPrepare=([bool]$ManifestPath);PublishingBackup=$false;SimpleResults=$true}
     $buttons=@('StartBackup','VerifyBackup','LoadMappings','CompareBackup','FindMissing','ChooseBackup','PreviewRecovery','RecoverFiles','BrowseManifest','ExportReport')
     $start={ param($kind,$operation,$argumentsObject)
         if($null -ne $view.Job) { return }
@@ -250,8 +250,8 @@ function Show-PitrBackupUi {
         $view.PreviewContext=$null
         & $start 'Compare' {param($state,$a) $progress={param($p) $state.Progress=$p}.GetNewClosure(); $state.Result=Compare-PitrBackup -ManifestPath $a.Path -Mappings $a.Map -Deep -Cancellation $state -Progress $progress} @{Path=$controls.ManifestPath.Text;Map=$map}
     }
-    $controls.FindMissing.Add_Click({ & $compare })
-    $controls.CompareBackup.Add_Click({ & $compare })
+    $controls.FindMissing.Add_Click({ $view.SimpleResults=$true; & $compare })
+    $controls.CompareBackup.Add_Click({ $view.SimpleResults=$false; & $compare })
     $recover={param([bool]$execute)
         $ids=@($view.SelectedIds.Keys)
         if($ids.Count -eq 0) { $controls.Status.Text='Select files explicitly after comparison.'; return }
@@ -280,6 +280,7 @@ function Show-PitrBackupUi {
         $query=$controls.Search.Text
         $classification=[string]$controls.ClassificationFilter.SelectedItem.Content
         $visible=@($view.Rows | Where-Object {
+            (-not $view.SimpleResults -or ($_.Classification -eq 'Missing' -and -not $_.IsAdvanced -and -not $_.IsSensitive)) -and
             ($classification -eq 'All' -or $_.Classification -eq $classification) -and
             ([string]::IsNullOrEmpty($query) -or $_.RelativePath.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0)
         })

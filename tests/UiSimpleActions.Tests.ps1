@@ -59,4 +59,19 @@ $controls.AlternateRoot.Text='changed-target'
 & $recover $true
 Assert ($controls.Status.Text -match 'Preview') 'A changed destination must require another preview.'
 Assert (-not [string]::IsNullOrWhiteSpace($first)) 'Preview must capture the exact operation context.'
-Write-Output 'Simple production actions passed: full verify, explicit approved mappings, missing-map refusal, preview-first and context-change refusal.'
+$filterRows=Assigned '$filterRows'
+$view.SimpleResults=$true; $view.Filtering=$false; $view.SelectedIds=@{safe=$true}
+$view.Rows=@(
+    [pscustomobject]@{Id='safe';Classification='Missing';RelativePath='document.txt';IsAdvanced=$false;IsSensitive=$false},
+    [pscustomobject]@{Id='script';Classification='Missing';RelativePath='launch.ps1';IsAdvanced=$false;IsSensitive=$true},
+    [pscustomobject]@{Id='app';Classification='Missing';RelativePath='AppData/settings.ini';IsAdvanced=$true;IsSensitive=$false},
+    [pscustomobject]@{Id='dir';Classification='Unknown';RelativePath='Documents';IsAdvanced=$false;IsSensitive=$false}
+)
+$controls.Search=[pscustomobject]@{Text=''}; $controls.ClassificationFilter=[pscustomobject]@{SelectedItem=[pscustomobject]@{Content='All'}}
+$controls.Results=[pscustomobject]@{ItemsSource=@();SelectedItems=(New-Object Collections.ArrayList)}
+& $filterRows
+Assert ($controls.Results.ItemsSource.Count -eq 1 -and $controls.Results.ItemsSource[0].Id -eq 'safe') 'Simple results must show only missing ordinary files, not technical directory rows or advanced/sensitive files.'
+$view.SimpleResults=$false
+& $filterRows
+Assert ($controls.Results.ItemsSource.Count -eq 4) 'Advanced all-files view must retain access to every comparison row.'
+Write-Output 'Simple production actions passed: full verify, explicit approved mappings, missing-map refusal, preview-first, context-change refusal and simple/advanced result views.'

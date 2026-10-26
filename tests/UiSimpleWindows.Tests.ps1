@@ -74,7 +74,7 @@ public static class PitrSimpleDialogProbe {
                         $controls.FindMissing.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
                     }
                     3 {
-                        if(-not $view.Report.ScanComplete -or $view.SelectedIds.Count -ne 1) { throw ('Only the missing safe document should be selected: '+$controls.Status.Text) }
+                        if(-not $view.Report.ScanComplete -or $view.SelectedIds.Count -ne 1 -or $controls.Results.Items.Count -ne 1) { throw ('Simple view must show and select only the missing safe document: '+$controls.Status.Text) }
                         $selected=@($view.Rows | Where-Object { $view.SelectedIds.ContainsKey([string]$_.Id) })
                         if($selected.Count -ne 1 -or $selected[0].RelativePath -notmatch 'missing.txt$') { throw 'Wrong automatic file selection.' }
                         $proofState.Stage=4
