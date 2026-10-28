@@ -33,7 +33,9 @@ rem  trip over the very first line. Non-ASCII characters in the PowerShell
 rem  part survive regardless, because the loader reads the file as UTF-8
 rem  explicitly instead of relying on the console code page.
 rem ===========================================================================
-setlocal
+setlocal DisableDelayedExpansion
+set "PITR_SELF=%~f0"
+set "PITR_ELEVATE_SELF=%~f0"
 
 if /i "%~1"=="backup" goto :backuprecovery
 if /i "%~1"=="recover" goto :backuprecovery
@@ -44,99 +46,79 @@ if /i "%~1"=="snapshot"  goto :snapshot
 if /i "%~1"=="autostart" goto :autostart
 if /i "%~1"=="idle"      goto :idle
 
-rem  Started from a network share, cmd.exe prints a warning of its own before the first
-rem  line here runs: UNC paths are not supported as the current directory, and it falls
-rem  back to C:\Windows. "@echo off" cannot suppress it - cmd.exe writes it itself, to
-rem  stderr. It reads like a failure but has no consequence: the loader works with %~f0,
-rem  its own full path, and never needs the current directory. So wipe it and put a calm
-rem  line in its place. Only in window mode - the selftest writes into a console whose
-rem  contents nobody wants cleared.
-set "P0=%~f0"
-if "%P0:~0,2%"=="\\" (
-  cls
-  echo.
-  echo   pitr-config - starting, please wait ...
-  echo.
-)
-
-rem  The argument has to survive the elevation, because the elevated instance is a new
-rem  process that does not inherit it. It is therefore passed on explicitly.
+rem GUI only: a real token check, never a service-dependent net-session probe.
+rem The explicit marker survives UAC; it cannot bypass the token check.
 set "PITR_NOUPDATE="
 if /i "%~1"=="noupdate" set "PITR_NOUPDATE=1"
+set "PITR_ELEVATION_ATTEMPTED="
+if /i "%~1"=="__pitr_elevated" set "PITR_ELEVATION_ATTEMPTED=1"
+if /i "%~2"=="__pitr_elevated" set "PITR_ELEVATION_ATTEMPTED=1"
+call :checkadmin
+set "PITR_EXIT=%errorlevel%"
+if "%PITR_EXIT%"=="0" goto :admin
+if not "%PITR_EXIT%"=="5" goto :guifailed
+if not defined PITR_ELEVATION_ATTEMPTED goto :elevate
+echo pitr-config: administrator rights were not granted. Not requesting UAC again.
+goto :guifailed
 
-net session >nul 2>&1
-if "%errorlevel%"=="0" goto :admin
-if defined PITR_NOUPDATE (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden -ArgumentList 'noupdate'"
-) else (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden"
-)
-exit /b
+:elevate
+set "PITR_ELEVATE_ARGS=__pitr_elevated"
+if defined PITR_NOUPDATE set "PITR_ELEVATE_ARGS=noupdate __pitr_elevated"
+rem The path is environment DATA, not source code containing a quoted filename.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $p=Start-Process -FilePath $env:PITR_ELEVATE_SELF -Verb RunAs -ArgumentList $env:PITR_ELEVATE_ARGS -WorkingDirectory ([IO.Path]::GetDirectoryName($env:PITR_ELEVATE_SELF)) -Wait -PassThru; if($null -eq $p) { throw 'Elevation returned no process.' }; exit $p.ExitCode } catch { [Console]::Error.WriteLine(('pitr-config: elevation failed or was cancelled: '+$_.Exception.Message)); exit 5 }"
+set "PITR_EXIT=%errorlevel%"
+if "%PITR_EXIT%"=="0" exit /b 0
+goto :guifailed
 
 :admin
-set "PITR_SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb"
-exit /b
+rem Keep the console observable. If WPF/bootstrap fails, show and retain the error.
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $i=$t.LastIndexOf($m); if($i -lt 0) { throw 'Embedded application code is missing.' }; $sb=[scriptblock]::Create($t.Substring($i+$m.Length)); & $sb; exit 0 } catch { $message='PITR could not start: '+$_.Exception.Message; [Console]::Error.WriteLine($message); try { Add-Type -AssemblyName PresentationFramework; [void][System.Windows.MessageBox]::Show($message,'PITR startup failed') } catch { }; exit 3 }"
+set "PITR_EXIT=%errorlevel%"
+if "%PITR_EXIT%"=="0" exit /b 0
+:guifailed
+echo.
+echo PITR could not open its window. Read the error above; no retry is automatic.
+pause
+exit /b %PITR_EXIT%
 
-:selftest
-set "PITR_SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -SelfTest"
-exit /b
-
-rem  Der Kommandozeilenbetrieb hebt sich bewusst NICHT selbst auf Administratorrechte:
-rem  Die Erhoehung startet einen neuen Prozess mit eigener Konsole, dessen Ausgabe und
-rem  Rueckgabewert im aufrufenden Skript nicht mehr ankommen. Ein Startskript laeuft
-rem  ohnehin erhoeht; alles andere bekommt eine klare Ansage und den Rueckgabewert 5.
-rem
-rem  The command line deliberately does NOT self-elevate: elevation starts a new process
-rem  with its own console, and neither its output nor its exit code would reach the
-rem  caller. A startup script runs elevated anyway; anything else gets a clear message
-rem  and exit code 5.
-:apply
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-  echo pitr-config: administrator rights are required for "apply".
-  exit /b 5
-)
-set "PITR_SELF=%~f0"
-set "PITR_ARGS=%*"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Apply -Options $env:PITR_ARGS"
+:checkadmin
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()); if($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 }; exit 5 } catch { [Console]::Error.WriteLine(('pitr-config: administrator token check failed: '+$_.Exception.Message)); exit 3 }"
 exit /b %errorlevel%
 
-rem  Legt sofort einen Wiederherstellungspunkt an, ohne Fenster. Das ist der Aufruf,
-rem  den die Startaufgabe verwendet - und der sich in jedem eigenen Skript benutzen
-rem  laesst. Braucht wie "apply" eine erhoehte Eingabeaufforderung.
+:selftest
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -SelfTest"
+exit /b %errorlevel%
+
+rem Unattended CLI never elevates, pauses, or loses its native exit status.
+:apply
+call :checkadmin
+if not "%errorlevel%"=="0" goto :clidenied
+set "PITR_ARGS=%*"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Apply -Options $env:PITR_ARGS"
+exit /b %errorlevel%
+
 :snapshot
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-  echo pitr-config: administrator rights are required for "snapshot".
-  exit /b 5
-)
-set "PITR_SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Snapshot"
+call :checkadmin
+if not "%errorlevel%"=="0" goto :clidenied
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Snapshot"
 exit /b %errorlevel%
 
 :autostart
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-  echo pitr-config: administrator rights are required for "autostart".
-  exit /b 5
-)
-set "PITR_SELF=%~f0"
+call :checkadmin
+if not "%errorlevel%"=="0" goto :clidenied
 set "PITR_ARGS=%*"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -AutoStart -Options $env:PITR_ARGS"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -AutoStart -Options $env:PITR_ARGS"
 exit /b %errorlevel%
 
-rem  Reine Auskunft: liest nur Aufgaben und Systemstartzeit, schreibt nichts und
-rem  braucht deshalb - anders als die drei Zweige darueber - keine erhoehte
-rem  Eingabeaufforderung.
+:clidenied
+echo pitr-config: a verified administrator token is required for this command.
+exit /b 5
+
 :idle
-set "PITR_SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Idle"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $sb=[scriptblock]::Create($t.Substring($t.LastIndexOf($m)+$m.Length)); & $sb -Idle"
 exit /b %errorlevel%
 
 :backuprecovery
-rem New unattended CLI never elevates or interpolates arguments into PowerShell code.
 set "PITR_BACKUP_ENTRY=%~dp0src\backup\Entry.ps1"
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%PITR_BACKUP_ENTRY%" %*
 exit /b %errorlevel%
