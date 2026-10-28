@@ -4,6 +4,11 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.9] — documentation testing build
+
+### Changed
+- README rewritten as a short front page: what the three tabs do, how to start, what is not yet proven, and where the full guide is. No behaviour change.
+
 ## [1.9.0-test.8] — user guide testing build
 
 ### Added
