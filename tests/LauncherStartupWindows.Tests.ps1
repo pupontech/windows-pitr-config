@@ -91,7 +91,7 @@ function Wait-LauncherExit($Run,[Nullable[int]]$Expected,[string]$Label) {
 try {
     Copy-LauncherPackage $PackageRoot $hostile
     foreach($name in @('START-HERE.cmd','pitr-backup.cmd','pitr-config.cmd')) {
-        if($name -eq 'pitr-config.cmd') {
+        if($name -ne 'pitr-backup.cmd') {
             $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
             if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Original GUI proof requires an already-elevated runner. This harness must not trigger a real UAC request.' }
         }
@@ -103,8 +103,8 @@ try {
         } finally { Stop-OwnedLauncher $run }
         $run=Start-Launcher $path
         $childProcess=$null;$element=$null;$statusText='';$seenWindow=$false;$warningSeen=$false
-        $original=$name -eq 'pitr-config.cmd'
-        $expectedTitle=if($original) {'Point-in-time restore'} else {'Backup and Recovery'}
+        $original=$name -ne 'pitr-backup.cmd'
+        $expectedTitle=if($original) {'Windows PITR - Backup and Restore'} else {'Backup and Recovery'}
         try {
             $watch=[Diagnostics.Stopwatch]::StartNew()
             while($watch.Elapsed.TotalSeconds -lt 60) {
@@ -128,24 +128,28 @@ try {
                             $warningSeen=$true
                         } elseif($element.Current.Name -eq $expectedTitle) {
                             $seenWindow=$true
-                            $statusId=if($original) {'TxtLog'} else {'Status'}
+                            $statusId='Status'
                             $condition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::AutomationIdProperty,$statusId)
                             $status=$element.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
                             if($status) {
-                                $statusText=if($original) {$status.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).Current.Value} else {$status.Current.Name}
+                                $statusText=$status.Current.Name
                             }
-                            if($original -and $warningSeen -and $statusText -match 'Ready\. Values|This Windows does not have point-in-time restore') { break }
-                            if(-not $original -and $statusText -like 'All discovered profiles selected.*') { break }
+                            if(($warningSeen -or -not $original) -and $statusText -like 'All discovered profiles selected.*') { break }
                             if($statusText -like 'Operation failed:*' -or ($original -and $statusText -match 'Error:')) { throw ('Actual startup discovery failed: '+$statusText) }
                         }
                     }
                 }
                 Start-Sleep -Milliseconds 200
             }
-            $ready=if($original) {$warningSeen -and $statusText -match 'Ready\. Values|This Windows does not have point-in-time restore'} else {$statusText -like 'All discovered profiles selected.*'}
+            $ready=($warningSeen -or -not $original) -and $statusText -like 'All discovered profiles selected.*'
             if(-not $seenWindow -or -not $ready -or ($original -and $statusText -match 'Error:')) {
                 $lastTitle=if($element) {$element.Current.Name} else {'no HWND'}
                 throw ('No real rendered/startup-ready window within deadline: '+$name+'; warningSeen='+$warningSeen+'; title='+$lastTitle+'; status='+$statusText)
+            }
+            if($original) {
+                $tabCondition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::TabItem)
+                $tabItems=@($element.FindAll([Windows.Automation.TreeScope]::Descendants,$tabCondition) | ForEach-Object { $_.Current.Name })
+                if($tabItems.Count -ne 3 -or @('Backup','Restore files','Restore points' | Where-Object {$_ -notin $tabItems}).Count -ne 0) { throw ('Actual unified launcher is missing workflow tabs: '+($tabItems -join ',')) }
             }
             $null=[PitrLauncherWindowProbe]::SetForegroundWindow($childProcess.MainWindowHandle)
             Start-Sleep -Milliseconds 200
@@ -167,7 +171,7 @@ try {
         $broken=Join-Path $fixture ('missing-'+$missing)
         Copy-LauncherPackage $PackageRoot $broken
         [IO.File]::Delete((Join-Path $broken ('src/backup/'+$missing+'.ps1')))
-        $run=Start-Launcher (Join-Path $broken 'START-HERE.cmd')
+        $run=Start-Launcher (Join-Path $broken 'pitr-backup.cmd')
         try {
             Start-Sleep -Seconds 3
             if($run.Process.HasExited) { throw ('RED: double-click failure vanished before acknowledgement for missing '+$missing) }
@@ -185,6 +189,17 @@ try {
             if(($r.Output+$r.Error) -notmatch $(if($missing -eq 'Entry') {'Entry\.ps1'} else {'Unknown option'})) { throw 'CLI failed for the wrong reason.' }
         } finally { Stop-OwnedLauncher $run }
     }
+    $missingMain=Join-Path $fixture 'missing-main'
+    Copy-LauncherPackage $PackageRoot $missingMain
+    [IO.File]::Delete((Join-Path $missingMain 'pitr-config.cmd'))
+    $run=Start-Launcher (Join-Path $missingMain 'START-HERE.cmd')
+    try {
+        Start-Sleep -Seconds 2
+        if($run.Process.HasExited) { throw 'Missing unified main launcher error vanished before acknowledgement.' }
+        $run.Process.StandardInput.WriteLine(' ');$run.Process.StandardInput.Flush()
+        $r=Wait-LauncherExit $run 3 'Missing unified main launcher'
+        if($r.Output -notmatch 'pitr-config.cmd is missing') { throw 'Missing unified main launcher diagnostic lost.' }
+    } finally { Stop-OwnedLauncher $run }
     $events.ToArray() | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $proof 'launcher-startup.json') -Encoding UTF8
     Write-Output 'PASS: missing-entry/module GUI failures remain visible; explicit CLI does not pause.'
 } finally {

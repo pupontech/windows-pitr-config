@@ -28,7 +28,7 @@ function Get-PitrBackupXaml {
   <ScrollViewer x:Name="MainScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False"><StackPanel>
   <StackPanel>
    <TextBlock x:Name="ApplicationWarning" TextWrapping="Wrap" FontWeight="Bold" Margin="0,0,0,8" Text="Warning: rollback can remove or revert apps, drivers and updates installed since the restore point. You may need to reinstall or repair apps. A file backup does not preserve installed apps or reinstall them. Close apps before live backup."/>
-   <TextBlock TextWrapping="Wrap" Margin="0,0,0,8" Text="Live copies are not application-consistent. Close applications first. Review cloud placeholders and EFS limitations. Keep BitLocker keys separately. Reports contain private filenames. This tool never starts PITR."/>
+   <TextBlock x:Name="FileCopyNotice" TextWrapping="Wrap" Margin="0,0,0,8" Text="Live copies are not application-consistent. Close applications first. Review cloud placeholders and EFS limitations. Keep BitLocker keys separately. Reports contain private filenames. This tool never starts PITR."/>
    <TextBlock x:Name="Status" Text="Restore readiness: not assessed" TextWrapping="Wrap" Margin="0,0,0,8"/>
   </StackPanel>
   <TabControl x:Name="Tabs">
@@ -149,15 +149,33 @@ function Get-PitrUiReportDetails {
     return ($lines -join [Environment]::NewLine)
 }
 
+function Select-PitrUnifiedTab {
+    [CmdletBinding()]
+    param($Window,[ValidateSet('Backup','Verify','Recover','RestorePoints')][string]$Mode='Backup')
+    if($null -eq $Window -or $Window.Tag -isnot [Collections.IDictionary] -or -not $Window.Tag.Contains('PitrTabs')) { return $false }
+    if($Mode -eq 'RestorePoints' -and $Window.Tag.Contains('PitrView') -and $null -ne $Window.Tag['PitrView'].Job) { return $false }
+    $Window.Tag['PitrTabs'].SelectedIndex=switch($Mode) { 'Backup' {0} 'RestorePoints' {2} default {1} }
+    return $true
+}
+
 function Show-PitrBackupUi {
     [CmdletBinding()]
-    param([ValidateSet('Backup','Verify','Recover')][string]$Mode='Backup',[string]$ApplicationRoot,[string]$ManifestPath,[string]$Language='en')
+    param([ValidateSet('Backup','Verify','Recover')][string]$Mode='Backup',[string]$ApplicationRoot,[string]$ManifestPath,[string]$Language='en',
+          $HostWindow,$RestorePointsContent)
     if ($env:OS -ne 'Windows_NT') { throw 'The graphical interface requires Windows with WPF.' }
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName System.Windows.Forms
     [xml]$xml=Get-PitrBackupXaml
     $reader=New-Object Xml.XmlNodeReader($xml)
     try { $window=[Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Dispose() }
+    $uiWindow=$window
+    if(($null -ne $HostWindow) -ne ($null -ne $RestorePointsContent)) { throw 'Unified UI needs both the existing host window and its restore-points content.' }
+    if($null -ne $HostWindow) {
+        # Keep one visible Window. Controls remain in their original XAML
+        # namescope, while all handlers run inside this blocking function scope.
+        $content=$uiWindow.Content; $uiWindow.Content=$null
+        $window=$HostWindow; $window.Content=$content
+    }
     # WPF WorkArea is already in logical units; multiplying by DPI again makes
     # a 1080p/200% desktop overflow. Clamp both dimensions before showing it.
     $workArea=[Windows.SystemParameters]::WorkArea
@@ -171,12 +189,25 @@ function Show-PitrBackupUi {
     $controls=@{}
     foreach($node in $xml.SelectNodes('//*[@*[local-name()="Name"]]')) {
         $name=$node.GetAttribute('Name','http://schemas.microsoft.com/winfx/2006/xaml')
-        $controls[$name]=$window.FindName($name)
+        $controls[$name]=$uiWindow.FindName($name)
     }
     . (Join-Path $ApplicationRoot 'src/backup/Localization.ps1')
     $labels=Get-PitrBackupLabels -Language $Language
     foreach($key in $labels.Keys) { if($controls.ContainsKey($key)) { $controls[$key].Content=$labels[$key] } }
     $view=@{Job=$null;Shared=$null;Kind='';Report=$null;Rows=@();Mappings=@();SelectedIds=@{};Filtering=$false;Generation=0;PreviewContext=$null;PendingPreviewContext=$null;PendingPrepare=([bool]$ManifestPath);PublishingBackup=$false;SimpleResults=$true}
+    $restorePointsTab=$null
+    if($null -ne $HostWindow) {
+        $window.Title='Windows PITR - Backup and Restore'
+        $controls.Tabs.Items[0].Header='Backup'
+        $controls.Tabs.Items[1].Header='Restore files'
+        $restorePointsTab=New-Object Windows.Controls.TabItem
+        $restorePointsTab.Name='RestorePointsTab'
+        $restorePointsTab.Header='Restore points'
+        $restorePointsTab.Content=$RestorePointsContent
+        $null=$controls.Tabs.Items.Add($restorePointsTab)
+        $controls.FileCopyNotice.Text='File backup and file restore do not start a Windows rollback. Restore points contains the separate Windows configuration and recovery actions, with their own confirmations. Close applications before live copies; keep BitLocker keys separately.'
+        $window.Tag=@{PitrTabs=$controls.Tabs;PitrControls=$controls;PitrRestorePoints=$restorePointsTab;PitrView=$view}
+    }
     $buttons=@('StartBackup','VerifyBackup','LoadMappings','CompareBackup','FindMissing','ChooseBackup','PreviewRecovery','RecoverFiles','BrowseManifest','ExportReport')
     $start={ param($kind,$operation,$argumentsObject)
         if($null -ne $view.Job) { return }
@@ -185,6 +216,7 @@ function Show-PitrBackupUi {
         $view.Job=Start-PitrUiWorker -ApplicationRoot $ApplicationRoot -Operation $operation -Arguments $argumentsObject -State $view.Shared
         $view.Job | Add-Member -NotePropertyName Generation -NotePropertyValue $view.Generation
         foreach($name in $buttons) { $controls[$name].IsEnabled=$false }
+        if($null -ne $restorePointsTab) { $restorePointsTab.IsEnabled=$false }
         $controls.CancelWork.IsEnabled=$true
         $controls.Status.Text=$kind+' running; restore readiness not assessed.'
     }
@@ -408,6 +440,7 @@ function Show-PitrBackupUi {
         finally {
             $view.Job.PowerShell.Dispose(); $view.Job.Runspace.Dispose(); $view.Job=$null
             foreach($name in $buttons) { $controls[$name].IsEnabled=$true }
+            if($null -ne $restorePointsTab) { $restorePointsTab.IsEnabled=$true }
             $controls.CancelWork.IsEnabled=$false
         }
         if($view.PendingPrepare) { $view.PendingPrepare=$false; & $prepare }

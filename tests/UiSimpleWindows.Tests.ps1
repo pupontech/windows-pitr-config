@@ -1,3 +1,4 @@
+param([switch]$Unified)
 $ErrorActionPreference='Stop'
 if([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { Write-Output 'SKIP: interactive simple workflow requires Windows WPF and separate runner storage.'; return }
 if(-not $env:RUNNER_TEMP) { throw 'Simple workflow proof requires RUNNER_TEMP on separate media.' }
@@ -22,7 +23,7 @@ $state=[hashtable]::Synchronized(@{Done=$false;Error=$null;Confirmed=$false;Stag
 $rs=[runspacefactory]::CreateRunspace();$rs.ApartmentState='STA';$rs.Open()
 $ps=[powershell]::Create();$ps.Runspace=$rs
 try {
-    $operation={param($root,$media,$profile,$missing,$changed,$proof,$shared)
+    $operation={param($root,$media,$profile,$missing,$changed,$proof,$shared,$useUnified)
         $ErrorActionPreference='Stop'
         foreach($m in @('Platform','Manifest','Backup','Recovery','Ui')) { . (Join-Path $root ('src/backup/'+$m+'.ps1')) }
         Add-Type -AssemblyName PresentationFramework
@@ -48,6 +49,7 @@ public static class PitrSimpleDialogProbe {
                 if($view.Job) { return }
                 switch($proofState.Stage) {
                     0 {
+                        if($useUnified -and ($controls.Tabs.Items.Count -ne 3 -or -not [object]::ReferenceEquals($window,$HostWindow))) { throw 'Unified file workflow does not use one three-tab host.' }
                         if($controls.Profiles.SelectedItems.Count -ne 2) { throw 'Default GUI did not select both fixture profiles.' }
                         $controls.Destination.Text=$media
                         $proofState.Stage=1
@@ -60,7 +62,7 @@ public static class PitrSimpleDialogProbe {
                         if($button.Y -lt 0 -or $button.Y+$controls.StartBackup.ActualHeight -gt $window.ActualHeight) { throw 'Primary backup action is below the default viewport.' }
                         $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32)
                         $bitmap.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
-                        $stream=[IO.File]::Create((Join-Path $proof 'simple-backup.png'));try{$encoder.Save($stream)}finally{$stream.Dispose()}
+                        $stream=[IO.File]::Create((Join-Path $proof $(if($useUnified){'unified-file-backup.png'}else{'simple-backup.png'})));try{$encoder.Save($stream)}finally{$stream.Dispose()}
                         [IO.File]::Delete($missing);[IO.File]::Delete((Join-Path $profile 'AppData/settings.ini'));[IO.File]::Delete((Join-Path $profile 'launch.ps1'))
                         [IO.File]::WriteAllText($changed,'newer document must survive')
                         $controls.Tabs.SelectedIndex=1
@@ -85,7 +87,7 @@ public static class PitrSimpleDialogProbe {
                         $controls.RecoverFiles.BringIntoView();$window.UpdateLayout()
                         $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32)
                         $bitmap.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
-                        $stream=[IO.File]::Create((Join-Path $proof 'simple-restore.png'));try{$encoder.Save($stream)}finally{$stream.Dispose()}
+                        $stream=[IO.File]::Create((Join-Path $proof $(if($useUnified){'unified-file-restore.png'}else{'simple-restore.png'})));try{$encoder.Save($stream)}finally{$stream.Dispose()}
                         $proofState.Stage=6
                         $controls.RecoverFiles.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
                     }
@@ -107,9 +109,18 @@ public static class PitrSimpleDialogProbe {
 '@
         $text=${function:Show-PitrBackupUi}.ToString().Replace('    $timer.Start()',($automation+"`n    `$timer.Start()"))
         Set-Item Function:\Show-PitrBackupUi ([scriptblock]::Create($text))
-        Show-PitrBackupUi -ApplicationRoot $root
+        if($useUnified) {
+            $main=[IO.File]::ReadAllText((Join-Path $root 'pitr-config.cmd'),[Text.Encoding]::UTF8)
+            [xml]$hostXml=[regex]::Match($main,'(?ms)^\$xaml = @''\r?\n(?<xaml>.*?)^''@').Groups['xaml'].Value
+            $hostReader=New-Object Xml.XmlNodeReader($hostXml)
+            try{$hostWindow=[Windows.Markup.XamlReader]::Load($hostReader)}finally{$hostReader.Dispose()}
+            $originalContent=$hostWindow.Content
+            Show-PitrBackupUi -ApplicationRoot $root -HostWindow $hostWindow -RestorePointsContent $originalContent
+        } else {
+            Show-PitrBackupUi -ApplicationRoot $root
+        }
     }
-    $null=$ps.AddScript($operation.ToString()).AddArgument($root).AddArgument($media).AddArgument($profile).AddArgument($missing).AddArgument($changed).AddArgument($proof).AddArgument($state)
+    $null=$ps.AddScript($operation.ToString()).AddArgument($root).AddArgument($media).AddArgument($profile).AddArgument($missing).AddArgument($changed).AddArgument($proof).AddArgument($state).AddArgument($Unified.IsPresent)
     $async=$ps.BeginInvoke()
     # A DispatcherTimer does not re-enter its own Tick while a clicked button
     # holds a modal confirmation. Drive that native dialog from this OUTSIDE

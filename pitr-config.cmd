@@ -72,7 +72,7 @@ goto :guifailed
 
 :admin
 rem Keep the console observable. If WPF/bootstrap fails, show and retain the error.
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $i=$t.LastIndexOf($m); if($i -lt 0) { throw 'Embedded application code is missing.' }; $sb=[scriptblock]::Create($t.Substring($i+$m.Length)); & $sb; exit 0 } catch { $message='PITR could not start: '+$_.Exception.Message; [Console]::Error.WriteLine($message); try { Add-Type -AssemblyName PresentationFramework; [void][System.Windows.MessageBox]::Show($message,'PITR startup failed') } catch { }; exit 3 }"
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $m='#___PSCODE___'; $t=[IO.File]::ReadAllText($env:PITR_SELF,[Text.UTF8Encoding]::new($false)); $i=$t.LastIndexOf($m); if($i -lt 0) { throw 'Embedded application code is missing.' }; $sb=[scriptblock]::Create($t.Substring($i+$m.Length)); & $sb -Unified; exit 0 } catch { $message='PITR could not start: '+$_.Exception.Message; [Console]::Error.WriteLine($message); try { Add-Type -AssemblyName PresentationFramework; [void][System.Windows.MessageBox]::Show($message,'PITR startup failed') } catch { }; exit 3 }"
 set "PITR_EXIT=%errorlevel%"
 if "%PITR_EXIT%"=="0" exit /b 0
 :guifailed
@@ -150,7 +150,7 @@ exit /b %errorlevel%
 #>
 
 param([switch]$SelfTest, [switch]$Apply, [switch]$Snapshot, [switch]$AutoStart,
-      [switch]$Idle, [string]$Options = '')
+      [switch]$Idle, [string]$Options = '', [switch]$Unified)
 
 # Wird von den kopflosen Zweigen gesetzt und von Write-Log/Update-Ui abgefragt.
 $script:Headless = $false
@@ -2854,6 +2854,7 @@ $xaml = @'
 
 $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
 $window = [System.Windows.Markup.XamlReader]::Load($reader)
+$script:PitrRestorePointsScroll=$window.Content
 
 # Collects every named element in one pass instead of a hand-typed list of x:Name
 # values. That list used to need a matching edit here whenever the XAML gained or
@@ -3005,7 +3006,7 @@ function Apply-Language {
     $ctl.BtnBackupVerify.Content = T 'backupVerify'
     $ctl.BtnBackupRecover.Content = T 'backupRecover'
     $ctl.BtnBackupOpen.Content = T 'backupOpen'
-    $window.Title        = T 'winTitle'
+    if(-not $Unified) { $window.Title = T 'winTitle' }
     $ctl.TxtHead.Text    = T 'headline'
     $ctl.TxtSub.Text     = "$(T 'subtitle')  ·  Version $Version"
     $ctl.TxtCollecting.Text  = T 'logCollecting'
@@ -3686,7 +3687,7 @@ function Invoke-TaskNow {
 # waehrend das Panel schon auf 1277 gewachsen war. Der Rand des Panels liegt ausserhalb
 # seiner ActualHeight und muss deshalb dazu.
 function Get-ContentHeight {
-    $p = $window.Content.Content
+    $p = $script:PitrRestorePointsScroll.Content
     return $p.ActualHeight + $p.Margin.Top + $p.Margin.Bottom
 }
 
@@ -3698,7 +3699,7 @@ $script:FitReady = $false
 $script:FitBusy = $false
 function Update-LogFit {
     if (-not $script:FitReady -or $script:FitBusy) { return }
-    $sv = $window.Content
+    $sv = $script:PitrRestorePointsScroll
     if ($sv.ViewportHeight -le 0) { return }
     # Ein Pixel bleibt frei: Genau aufzufuellen heisst, um ein Zehntel darueber zu landen,
     # und dafuer erscheint prompt wieder ein Rollbalken.
@@ -3742,6 +3743,10 @@ function Set-Busy {
 # never from a profile or a user-selected backup directory.
 function Open-PitrBackupWindow {
     param([ValidateSet('Backup','Verify','Recover')][string]$Mode)
+    if($window.Tag -is [Collections.IDictionary] -and $window.Tag.Contains('PitrTabs')) {
+        $null=Select-PitrUnifiedTab -Window $window -Mode $Mode
+        return
+    }
     Set-Busy $true
     try {
         if (-not $env:PITR_SELF) { throw 'Application location is unavailable.' }
@@ -4009,7 +4014,7 @@ Apply-Language
 # Werte und feuert danach. Es deckt beide Faelle ab: Der Inhalt aendert sich (ein Kasten
 # klappt zu) oder das Sichtfenster (der Nutzer zieht am Fensterrand).
 $script:LogHeightBase = $ctl.TxtLog.Height
-$window.Content.Add_ScrollChanged({ Update-LogFit })
+$script:PitrRestorePointsScroll.Add_ScrollChanged({ Update-LogFit })
 
 # Die Felder tragen bis zur ersten Abfrage einen Platzhalter. "-" waere hier falsch:
 # Das sieht nach einer Auskunft aus, obwohl noch gar nichts gelesen wurde.
@@ -4066,8 +4071,11 @@ $window.Add_ContentRendered({
         if ($script:NoPitr) { Write-Log (T 'logNoPitr') } else { Write-Log (T 'logReady') }
         try { $window.UpdateLayout() } catch { }
     }
+    # Unified tabs keep their own stable work-area bounds. A hidden restore-
+    # points page must never resize the entire Backup/Restore shell.
+    if($Unified) { return }
     try {
-        $sv     = $window.Content
+        $sv     = $script:PitrRestorePointsScroll
         $panel  = $sv.Content
         # Get-ContentHeight und nicht die nackte Hoehe des StackPanels: Dessen Rand liegt
         # ausserhalb seiner ActualHeight, oben wie unten. Ohne diese Pixel blieb das
@@ -4458,4 +4466,15 @@ if ($script:UpdateJob) {
 }
 
 Show-PitrApplicationWarning
-$window.ShowDialog() | Out-Null
+if($Unified) {
+    if(-not $env:PITR_SELF) { throw 'Unified application location is unavailable.' }
+    $appRoot=Split-Path -Parent $env:PITR_SELF
+    foreach($module in @('Platform','Manifest','Backup','Recovery','Localization','Ui')) {
+        $file=Join-Path $appRoot ('src/backup/'+$module+'.ps1')
+        if(-not [IO.File]::Exists($file)) { throw ('Portable unified package incomplete: '+$module+'.ps1') }
+        . $file
+    }
+    Show-PitrBackupUi -HostWindow $window -RestorePointsContent $script:PitrRestorePointsScroll -ApplicationRoot $appRoot -Language $script:Lang
+} else {
+    $window.ShowDialog() | Out-Null
+}

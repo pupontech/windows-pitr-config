@@ -2,7 +2,10 @@ $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $startHere=Join-Path $root 'START-HERE.cmd'
 if(-not [IO.File]::Exists($startHere)) { throw 'RED: obvious START-HERE.cmd entrypoint is missing.' }
-if([Convert]::ToBase64String([IO.File]::ReadAllBytes($startHere)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root 'pitr-backup.cmd')))) { throw 'START-HERE must use the same direct trusted entrypoint as pitr-backup.cmd.' }
+$startText=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($startHere))
+if($startText -notmatch 'PITR_MAIN=%~dp0pitr-config\.cmd' -or $startText -notmatch '(?m)^"%PITR_MAIN%"\r?$') { throw 'START-HERE must chain to the unified main launcher without CALL re-expansion.' }
+if($startText -match '(?<!\r)\n' -or $startText.StartsWith([string][char]0xFEFF,[StringComparison]::Ordinal)) { throw 'START-HERE encoding/CRLF violation.' }
+if($startText -notmatch '-File "%PITR_ENTRY%" %\*') { throw 'Explicit START-HERE CLI must stay direct and non-elevating.' }
 if($env:OS -eq 'Windows_NT') { & $startHere --help; if($LASTEXITCODE -ne 0) { throw 'Actual START-HERE launcher failed.' } }
 $path=Join-Path $root 'pitr-backup.cmd'
 if(-not [IO.File]::Exists($path)) { throw 'RED: portable CMD launcher not implemented' }
