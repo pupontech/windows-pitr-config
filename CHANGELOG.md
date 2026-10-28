@@ -4,6 +4,18 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.6] — startup repair testing build
+
+### Fixed
+- Double-clicking START-HERE.cmd or pitr-backup.cmd now opens Backup and Recovery instead of printing help and exiting. Explicit help remains noninteractive.
+- No-argument launch failures keep the console/error visible until acknowledged; explicit CLI calls never pause.
+- Original PITR elevation passes its filename as data, preserving apostrophes and ordinary download-folder punctuation. Administrator checks use the actual Windows token, not the Server service. A relaunch marker prevents repeated UAC requests when elevation is unavailable.
+- Original GUI startup runs in an observable STA host and reports bootstrap errors instead of failing in a hidden console.
+
+### Tests
+- Native CMD-to-WPF no-argument startup, initial discovery, informational warning, screenshots and WM_CLOSE shutdown are checked on Windows 2022/2025, including extracted packages in paths with spaces, parentheses, apostrophe, ampersand and exclamation mark.
+- Missing-entry/module diagnostics and interactive acknowledgement are checked separately from non-pausing CLI errors. Elevation-command tests use an inert process boundary; actual UAC interaction and live Windows 11 PITR remain owner-test gates.
+
 ## [1.9.0-test.5] — private testing build
 
 ### Changed

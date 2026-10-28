@@ -2,7 +2,9 @@
 
 **Needs testing.** This version adds file backup and restore to the original PITR tool. Test it with disposable files first and keep an independent backup of anything important.
 
-[Download the testing ZIP](https://github.com/pupontech/windows-pitr-config/releases/download/v1.9.0-test.5/windows-pitr-config-1.9.0-test.5.zip) · [Release notes](https://github.com/pupontech/windows-pitr-config/releases/tag/v1.9.0-test.5)
+[Windows verification builds](https://github.com/pupontech/windows-pitr-config/actions/workflows/backup-recovery-ci.yml) · [Historical releases](https://github.com/pupontech/windows-pitr-config/releases)
+
+For the startup repair, use **1.9.0-test.6** or newer. Download the portable ZIP from a successful matching verification run (`portable-windows-2022-powershell` artifact), or use the exact ZIP supplied with its verification report. Older releases do not contain this repair.
 
 ## The original PITR tool
 

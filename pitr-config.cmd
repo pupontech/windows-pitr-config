@@ -160,7 +160,7 @@ $ErrorActionPreference = 'Stop'
 # The one place the version is defined. It appears under the headline in the window
 # and in the selftest; a release is tagged with "v" followed by this value. Keeping
 # it out of the batch header above avoids having two numbers that can drift apart.
-$Version  = '1.9.0-test.5'
+$Version  = '1.9.0-test.6'
 
 # Asked on start unless PITR_NOUPDATE is set. Returns the newest release of the project.
 $UpdateApi = 'https://api.github.com/repos/henmedia/windows-pitr-config/releases/latest'

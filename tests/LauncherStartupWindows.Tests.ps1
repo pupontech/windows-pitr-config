@@ -19,6 +19,7 @@ using System.Runtime.InteropServices;
 public static class PitrLauncherWindowProbe {
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
 }
 '@
 $base=$env:RUNNER_TEMP
@@ -57,6 +58,16 @@ function Start-Launcher([string]$Path,[string]$Tail='') {
     finally { [Console]::InputEncoding=$savedInputEncoding }
     [pscustomobject]@{Process=$p;Out=$p.StandardOutput.ReadToEndAsync();Err=$p.StandardError.ReadToEndAsync()}
 }
+function Stop-OwnedProcess($Process) {
+    if(-not $Process.HasExited) {
+        try { $Process.Kill() } catch {
+            # Windows may report Access Denied if the child exits between the
+            # HasExited probe and Kill. Confirm exit; never suppress a live denial.
+            if(-not $Process.WaitForExit(1000)) { throw }
+        }
+    }
+    if(-not $Process.WaitForExit(10000)) { throw 'Fixture process termination was not confirmed.' }
+}
 function Stop-OwnedLauncher($Run) {
     if(-not $Run.Process.HasExited) {
         # Only descendants of this fixture's exact CMD PID may be terminated.
@@ -64,12 +75,10 @@ function Stop-OwnedLauncher($Run) {
             $childProcess=$null
             try { $childProcess=[Diagnostics.Process]::GetProcessById($child.ProcessId) } catch [ArgumentException] { continue }
             try {
-                if(-not $childProcess.HasExited) { $childProcess.Kill() }
-                if(-not $childProcess.WaitForExit(10000)) { throw 'Fixture child termination was not confirmed; refusing to assume cleanup completed.' }
+                Stop-OwnedProcess $childProcess
             } finally { $childProcess.Dispose() }
         }
-        $Run.Process.Kill()
-        $null=$Run.Process.WaitForExit(10000)
+        Stop-OwnedProcess $Run.Process
     }
     $Run.Process.Dispose()
 }
@@ -113,11 +122,11 @@ try {
                         if($original -and $element.Current.Name -eq 'Applications and data before restore' -and $element.Current.ClassName -eq '#32770') {
                             # Only acknowledge the informational app-impact warning;
                             # never click a recovery/reboot/mutation confirmation.
-                            $okCondition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::AutomationIdProperty,'1')
-                            $ok=$element.FindFirst([Windows.Automation.TreeScope]::Descendants,$okCondition)
-                            if($null -eq $ok) { throw 'Known informational warning has no OK button.' }
-                            $ok.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
-                            $warningSeen=$true
+                            $okHandle=[PitrLauncherWindowProbe]::GetDlgItem($handle,1)
+                            if($okHandle -ne [IntPtr]::Zero) {
+                                if(-not [PitrLauncherWindowProbe]::PostMessage($okHandle,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)) { throw 'Known informational warning could not be acknowledged.' }
+                                $warningSeen=$true
+                            }
                         } elseif($element.Current.Name -eq $expectedTitle) {
                             $seenWindow=$true
                             $statusId=if($original) {'TxtLog'} else {'Status'}

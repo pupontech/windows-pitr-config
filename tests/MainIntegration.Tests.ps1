@@ -1,10 +1,12 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $text=[IO.File]::ReadAllText((Join-Path $root 'pitr-config.cmd'),[Text.Encoding]::UTF8)
+$adminGate=[regex]::Match($text,'(?m)^call :checkadmin\r?$')
+if(-not $adminGate.Success) { throw 'Original administrator-token gate missing.' }
 foreach($command in @('backup','recover')) {
     $route='if /i "%~1"=="'+$command+'"'
     $index=$text.IndexOf($route,[StringComparison]::OrdinalIgnoreCase)
-    if($index -lt 0 -or $index -gt $text.IndexOf('net session')) { throw ('RED: missing pre-UAC '+$command+' CLI route') }
+    if($index -lt 0 -or $index -gt $adminGate.Index) { throw ('RED: missing pre-UAC '+$command+' CLI route') }
 }
 if($text -notmatch '(?m)^:backuprecovery\r?$') { throw 'Backup CLI branch missing' }
 if($text -notmatch '-File "%PITR_BACKUP_ENTRY%" %\*') { throw 'New CLI must pass native args, not executable PowerShell expressions' }
