@@ -119,20 +119,13 @@ try {
                     $handle=$childProcess.MainWindowHandle
                     if($handle -ne [IntPtr]::Zero) {
                         $element=[Windows.Automation.AutomationElement]::FromHandle($handle)
-                        if($original -and $element.Current.Name -eq 'Applications and data before restore' -and $element.Current.ClassName -eq '#32770') {
-                            # Only acknowledge the informational app-impact warning;
-                            # never click a recovery/reboot/mutation confirmation.
-                            $buttonCondition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button)
-                            $buttons=@($element.FindAll([Windows.Automation.TreeScope]::Descendants,$buttonCondition) | ForEach-Object { $_ })
-                            $okButtons=@($buttons | Where-Object { $_.Current.Name -match '^&?OK$' })
-                            if(-not $warningSeen) {
-                                $buttons | ForEach-Object { [pscustomobject]@{Name=$_.Current.Name;AutomationId=$_.Current.AutomationId;Handle=$_.Current.NativeWindowHandle} } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $proof 'original-warning-buttons.json') -Encoding UTF8
-                            }
-                            if($okButtons.Count -eq 1) {
-                                $null=[PitrLauncherWindowProbe]::SetForegroundWindow($handle)
-                                $okButtons[0].GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
-                                $warningSeen=$true
-                            }
+                        if($original -and $element.Current.Name -eq 'Applications and data before restore') {
+                            # This exact process-owned dialog is informational
+                            # (OK only). WM_CLOSE acknowledges it without any
+                            # UIA button-provider or numeric control-ID assumption.
+                            # Never acknowledge a recovery/reboot confirmation.
+                            if(-not [PitrLauncherWindowProbe]::PostMessage($handle,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)) { throw 'Known informational warning could not be closed.' }
+                            $warningSeen=$true
                         } elseif($element.Current.Name -eq $expectedTitle) {
                             $seenWindow=$true
                             $statusId=if($original) {'TxtLog'} else {'Status'}

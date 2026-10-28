@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $cmd = Join-Path $repo 'pitr-config.cmd'
-$source = [IO.File]::ReadAllText($cmd, [Text.Encoding]::UTF8)
+$source = (New-Object Text.UTF8Encoding($false,$true)).GetString([IO.File]::ReadAllBytes($cmd))
+if($source.StartsWith([string][char]0xFEFF,[StringComparison]::Ordinal) -or $source -match '(?<!\r)\n') { throw 'Original CMD must be UTF-8 without BOM and use CRLF, including its preamble.' }
 $marker = '#___PSCODE___'
 $at = $source.LastIndexOf($marker)
 if ($at -lt 0) { throw 'Embedded PowerShell marker missing' }
