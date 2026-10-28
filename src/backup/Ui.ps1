@@ -203,7 +203,12 @@ function Show-PitrBackupUi {
         $restorePointsTab=New-Object Windows.Controls.TabItem
         $restorePointsTab.Name='RestorePointsTab'
         $restorePointsTab.Header='Restore points'
-        $restorePointsTab.Content=$RestorePointsContent
+        # The outer MainScroll is the one page viewport in unified mode.
+        # Detach the original ScrollViewer's body; nesting both viewers would
+        # give restore-points content an unbounded/competing scroll region.
+        $restorePointsBody=$RestorePointsContent.Content
+        $RestorePointsContent.Content=$null
+        $restorePointsTab.Content=$restorePointsBody
         $null=$controls.Tabs.Items.Add($restorePointsTab)
         $controls.FileCopyNotice.Text='File backup and file restore do not start a Windows rollback. Restore points contains the separate Windows configuration and recovery actions, with their own confirmations. Close applications before live copies; keep BitLocker keys separately.'
         $window.Tag=@{PitrTabs=$controls.Tabs;PitrControls=$controls;PitrRestorePoints=$restorePointsTab;PitrView=$view}

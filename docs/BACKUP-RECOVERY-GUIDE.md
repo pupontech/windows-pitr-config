@@ -1,10 +1,10 @@
 # User backup and recovery guide
 
-Status: implementation documentation for the current development tree; not a release or Windows verification claim. Backup/recovery is separate from the existing Windows PITR rollback workflow. This feature never starts a restore point rollback, changes WinRE, or reboots the computer.
+Status: implementation documentation for the current development tree; not a release or Windows verification claim. File backup/recovery remains logically separate from Windows PITR rollback, now presented in the same combined window. Backup and Restore files never start a Windows rollback, change WinRE, or reboot; Restore points retains the separate original confirmed recovery actions.
 
 ## Simple screens
 
-**START HERE:** Extract the whole ZIP and double-click **START-HERE.cmd** to open the backup/restore window. Keep `src/` beside it. The existing `pitr-backup.cmd` and advanced `pitr-config.cmd` launchers remain available.
+**START HERE:** Extract the whole ZIP and double-click **START-HERE.cmd** for one window with **Backup**, **Restore files**, and **Restore points** tabs. Keep `src/` beside it. `pitr-config.cmd` opens the same combined window; it requests administrator rights once when needed for Windows configuration. Optional `pitr-backup.cmd` remains a standalone, non-elevating file-only entry. The independent recovery package also remains standalone. Switching tabs retains entered paths and does not grant consent or start work.
 
 Both windows fit their initial width and height to the Windows work area (which already accounts for display scaling and the taskbar). Resize normally: content scrolls instead of shrinking the text, action rows wrap, and the backup/restore Cancel / View details controls remain available. Expanded advanced options and reports use the same main scroll area; View details scrolls the report into view. Testing includes 1080p-equivalent logical layouts at multiple scales, not live switching between monitors with different DPI.
 

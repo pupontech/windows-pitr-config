@@ -4,6 +4,19 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.7] — unified-tabs testing build
+
+### Changed
+- START-HERE.cmd and pitr-config.cmd open one window with **Backup**, **Restore files**, and **Restore points** tabs. These remain distinct steps; entered paths are retained while switching.
+- Existing Backup Before Restore / Verify / Compare shortcuts navigate existing tabs instead of opening another window. Switching tabs does not grant backup readiness, mapping consent or recovery authorization.
+- The combined application uses the original single-attempt administrator/UAC startup. Optional pitr-backup.cmd and the independent recovery package retain their non-elevating standalone file UI; unattended CLI behavior is unchanged.
+- Restore-points actions are unavailable while a file worker is active. Closing during file work requests safe cancellation rather than abandoning the worker.
+- One outer scrolling page viewport owns the combined content; original page auto-fit logic cannot resize the shell from a hidden tab.
+
+### Tests
+- Same-host three-tab navigation/state/shortcut and safe-close proofs, logical-scale reachability, and a complete synthetic backup/verification/preview/native-confirmation/file-restore workflow inside the unified host.
+- Native no-argument/extracted-ZIP launcher tests still exercise the unmodified application. Live Windows 11 PITR and actual UAC interaction remain owner-test gates.
+
 ## [1.9.0-test.6] — startup repair testing build
 
 ### Fixed

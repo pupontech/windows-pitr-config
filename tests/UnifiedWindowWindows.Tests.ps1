@@ -11,6 +11,11 @@ try {
         $env:PITR_SELF=Join-Path $root 'pitr-config.cmd'
         $env:PITR_NOUPDATE='1'
         $unifiedAutomation=@'
+    function Update-UnifiedLayout {
+        $window.UpdateLayout()
+        $window.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::ApplicationIdle)
+        $window.UpdateLayout()
+    }
     function Save-UnifiedCapture([string]$name) {
         $window.UpdateLayout()
         $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32)
@@ -29,6 +34,13 @@ try {
                 $proofTimer.Stop();$window.Close();return
             }
             if($view.Job) { return }
+            # Original ContentRendered collection can pump the Dispatcher before
+            # the backup discovery handler has run. Wait for its real completion,
+            # not merely the absence of a job before it has even been created.
+            if($proofState.Stage -eq 0 -and $controls.Status.Text -notlike 'All discovered profiles selected.*') {
+                if($controls.Status.Text -like 'Operation failed:*') { throw $controls.Status.Text }
+                return
+            }
             switch($proofState.Stage) {
                 0 {
                     if(-not [object]::ReferenceEquals($window,$HostWindow) -or -not $window.IsVisible) { throw 'Composition opened a different host window.' }
@@ -41,15 +53,44 @@ try {
                     foreach($index in @(0,1,2)) {
                         $tabs.SelectedIndex=$index;$window.UpdateLayout()
                         if(-not [object]::ReferenceEquals([Windows.Window]::GetWindow($tabs.Items[$index].Content),$window)) { throw 'Tab content belongs to another window.' }
-                        if($index -eq 0) { $controls.StartBackup.BringIntoView() }
-                        if($index -eq 1) { $controls.RecoverFiles.BringIntoView() }
-                        if($index -eq 2) { $ctl.BtnRefresh.BringIntoView() }
+                        $controls.MainScroll.ScrollToTop();Update-UnifiedLayout
                         Save-UnifiedCapture ('unified-tab'+$index+'.png')
+                        $target=if($index -eq 0){$controls.StartBackup}elseif($index -eq 1){$controls.RecoverFiles}else{$ctl.BtnRefresh}
+                        $target.BringIntoView();Update-UnifiedLayout
+                        $point=$target.TranslatePoint([Windows.Point]::new(0,0),$controls.MainScroll)
+                        if($point.Y -lt -1 -or $point.Y+$target.ActualHeight -gt $controls.MainScroll.ActualHeight+1) { throw ('Tab action is clipped outside shared scroll viewport: '+$index) }
                     }
                     if(-not [object]::ReferenceEquals([Windows.Window]::GetWindow($ctl.BtnRefresh),$window)) { throw 'Original PITR controls lost their host.' }
+                    $scrollAncestors=0;$ancestor=[Windows.Media.VisualTreeHelper]::GetParent($ctl.BtnApply)
+                    while($null -ne $ancestor) {
+                        if($ancestor -is [Windows.Controls.ScrollViewer]) { $scrollAncestors++ }
+                        $ancestor=[Windows.Media.VisualTreeHelper]::GetParent($ancestor)
+                    }
+                    if($scrollAncestors -ne 1) { throw 'Restore-points page has competing/nested viewport scrollbars.' }
+                    $savedWidth=$window.Width;$savedHeight=$window.Height
+                    foreach($scale in @(1.0,1.5,2.0)) {
+                        $fit=Get-PitrUiWindowBounds -WorkWidth (1920/$scale) -WorkHeight (1040/$scale)
+                        $window.Width=$fit.Width;$window.Height=$fit.Height
+                        foreach($index in @(0,1,2)) {
+                            $tabs.SelectedIndex=$index;$window.UpdateLayout()
+                            $target=if($index -eq 0){$controls.StartBackup}elseif($index -eq 1){$controls.RecoverFiles}else{$ctl.BtnApply}
+                            $target.BringIntoView();Update-UnifiedLayout
+                            $point=$target.TranslatePoint([Windows.Point]::new(0,0),$controls.MainScroll)
+                            if($target.ActualHeight -le 0 -or $point.Y -lt -1 -or $point.Y+$target.ActualHeight -gt $controls.MainScroll.ActualHeight+1) { throw ('Unified action is unreachable at logical scale '+$scale+' tab '+$index) }
+                        }
+                    }
+                    $window.Width=$savedWidth;$window.Height=$savedHeight
+                    $tabs.SelectedIndex=2;$window.UpdateLayout()
                     # The original Refresh handler is read-only. No Apply, snapshot,
                     # task change, recovery/reboot, or language mutation is invoked.
                     $ctl.BtnRefresh.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+                    $window.UpdateLayout()
+                    # Prove the original Update-View actually ran through the
+                    # composed control graph (read-only query, no writes).
+                    $filled=@('TxtSupport','TxtEdition','TxtLast','TxtNext','TxtDelta','TxtTaskState','TxtWinRE','TxtPoints','TxtOldest','TxtStorage' |
+                        Where-Object { $ctl[$_].Text -and $ctl[$_].Text -ne $ctl[$_].Text.GetType().Name -and $ctl[$_].Text -notmatch 'Loading|Wird geladen' })
+                    if($filled.Count -eq 0) { throw 'Original PITR configuration refresh did not update any control after reparenting.' }
+                    if($ctl.TxtLog.Text -match 'Fehler:|Error:') { throw ('Original PITR refresh reported an error after reparenting: '+$ctl.TxtLog.Text) }
                     $ctl.BtnBackupBefore.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
                     if($tabs.SelectedIndex -ne 0) { throw 'Backup shortcut opened another window or did not navigate.' }
                     $tabs.SelectedIndex=2

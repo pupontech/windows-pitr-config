@@ -5,7 +5,7 @@ This is a testing build, not a claim that every possible bug or live recovery sc
 ## Start here
 
 1. Extract the entire ZIP to a normal local folder. Keep **START-HERE.cmd** and its `src` folder together.
-2. **START HERE: double-click START-HERE.cmd** to open the backup/restore window. The old `pitr-backup.cmd` launcher still works. This entry does not self-elevate. If your account cannot read another profile, use a separately authorized elevated console; never bypass ACLs.
+2. **START HERE: double-click START-HERE.cmd** for one window with **Backup**, **Restore files**, and **Restore points** tabs. `pitr-config.cmd` opens the same combined application and requests administrator rights once when needed. Keep all modules together. For optional non-elevating file-only use, `pitr-backup.cmd` remains standalone; never bypass ACLs.
 3. First test with a small disposable Custom folder. Choose a backup destination on a different volume from Windows and your selected source, preferably independent external storage. Same-volume destinations are intentionally refused. Review all skips and errors; success must include full verification, not just copied bytes.
 4. In a disposable copy of your current-data folder, change/delete test files. Select the generated manifest, approve the explicit SourceId mapping, and run deep comparison. Preview selected recovery before Execute. Existing files are kept by default. Replace is explicit and preserves the current version; recovery reports must be inspected.
 5. Test the backup generation's `recovery/Start-Recovery.cmd` after moving the generation to accessible media. Keep its entire generation directory intact. Ordinary files remain readable in Explorer even without this tool.
@@ -14,7 +14,7 @@ See **docs/BACKUP-RECOVERY-GUIDE.md** for detailed scope, commands, limitations 
 
 ## If the window does not open
 
-Double-click **START-HERE.cmd** without arguments to open Backup and Recovery. `--help` deliberately prints command help instead. Keep the entire extracted `src` folder beside the launcher; running the CMD file alone or directly inside the ZIP is unsupported. A failed no-argument startup now keeps its console open until you press a key, so the actual error can be read. Explicit CLI commands never pause. Copy the visible error text when reporting a startup failure; do not send private backup manifests or filenames unless needed.
+Double-click **START-HERE.cmd** without arguments to open the combined three-tab application. `--help` deliberately prints command help instead. Keep the entire extracted `src` folder beside the launcher; running the CMD file alone or directly inside the ZIP is unsupported. A failed no-argument startup now keeps its console open until you press a key, so the actual error can be read. Explicit CLI commands never pause. Copy the visible error text when reporting a startup failure; do not send private backup manifests or filenames unless needed.
 
 ## Warnings are deliberate
 

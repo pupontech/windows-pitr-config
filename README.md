@@ -4,7 +4,7 @@
 
 [Windows verification builds](https://github.com/pupontech/windows-pitr-config/actions/workflows/backup-recovery-ci.yml) · [Historical releases](https://github.com/pupontech/windows-pitr-config/releases)
 
-For the startup repair, use **1.9.0-test.6** or newer. Download the portable ZIP from a successful matching verification run (`portable-windows-2022-powershell` artifact), or use the exact ZIP supplied with its verification report. Older releases do not contain this repair.
+For the combined three-tab interface, use **1.9.0-test.7** or newer. Download the portable ZIP from a successful matching verification run (`portable-windows-2022-powershell` artifact), or use the exact ZIP supplied with its verification report. Older releases do not contain this repair.
 
 ## The original PITR tool
 
@@ -16,7 +16,7 @@ PITR covers the Windows drive, not your other drives. Its snapshots stay on that
 
 ## What we added
 
-We added a separate file backup and restore window for keeping current files before a rollback and bringing selected files back afterwards.
+The application now has three distinct steps in one window: **Backup**, **Restore files**, and **Restore points**. The first two keep current files before a rollback and bring selected files back afterwards; Restore points retains the original Windows PITR configuration and recovery controls. Switching tabs keeps your entered paths and does not start any operation.
 
 - All discovered user folders are selected by default. Remove any you do not want, or choose a custom folder.
 - Back up to a different volume, preferably an external drive. The tool checks the copied files and reports problems.

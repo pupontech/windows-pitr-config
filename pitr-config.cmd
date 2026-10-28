@@ -6,10 +6,10 @@ rem  Ten languages: English, German, Dutch, French, Spanish, Portuguese, Italian
 rem  Polish, Ukrainian and Czech. The one matching the Windows display language is
 rem  picked automatically.
 rem
-rem  Single file: the complete PowerShell code sits below the #___PSCODE___
-rem  marker and is loaded from here. Just double-click it; the file requests
-rem  administrator rights itself (UAC) and can be copied anywhere, e.g. onto
-rem  a USB stick.
+rem  The original PITR PowerShell code is embedded below the #___PSCODE___
+rem  marker. The combined Backup / Restore files / Restore points window also
+rem  needs the src folder from the portable ZIP. Keep the complete package
+rem  together. Double-click requests administrator rights once when needed.
 rem
 rem  Running it with the argument "selftest" only checks the interface - no
 rem  window, no administrator rights, and nothing is written.
@@ -160,7 +160,7 @@ $ErrorActionPreference = 'Stop'
 # The one place the version is defined. It appears under the headline in the window
 # and in the selftest; a release is tagged with "v" followed by this value. Keeping
 # it out of the batch header above avoids having two numbers that can drift apart.
-$Version  = '1.9.0-test.6'
+$Version  = '1.9.0-test.7'
 
 # Asked on start unless PITR_NOUPDATE is set. Returns the newest release of the project.
 $UpdateApi = 'https://api.github.com/repos/henmedia/windows-pitr-config/releases/latest'
