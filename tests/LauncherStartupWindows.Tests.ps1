@@ -57,10 +57,10 @@ function Stop-OwnedLauncher($Run) {
     }
     $Run.Process.Dispose()
 }
-function Wait-LauncherExit($Run,[int]$Expected,[string]$Label) {
+function Wait-LauncherExit($Run,[Nullable[int]]$Expected,[string]$Label) {
     if(-not $Run.Process.WaitForExit(15000)) { throw ($Label+' hung; explicit CLI must not pause.') }
     $out=$Run.Out.Result; $err=$Run.Err.Result
-    if($Run.Process.ExitCode -ne $Expected) { throw ($Label+' exit '+$Run.Process.ExitCode+': '+$out+' '+$err) }
+    if(($null -ne $Expected -and $Run.Process.ExitCode -ne $Expected) -or ($null -eq $Expected -and $Run.Process.ExitCode -eq 0)) { throw ($Label+' exit '+$Run.Process.ExitCode+': '+$out+' '+$err) }
     [pscustomobject]@{Output=$out;Error=$err}
 }
 try {
@@ -131,7 +131,13 @@ try {
             $events.Add([pscustomobject]@{Missing=$missing;AcknowledgementRequired=$true;ExitCode=$run.Process.ExitCode})
         } finally { Stop-OwnedLauncher $run }
         $run=Start-Launcher (Join-Path $broken 'pitr-backup.cmd') 'backup --unknown'
-        try { $null=Wait-LauncherExit $run 3 'Explicit invalid CLI, incomplete package' } finally { Stop-OwnedLauncher $run }
+        try {
+            # Missing Entry never reaches our parser: powershell.exe owns that
+            # native nonzero code. With Entry present, invalid input is exactly 3.
+            $expected=if($missing -eq 'Entry') {$null} else {3}
+            $r=Wait-LauncherExit $run $expected 'Explicit invalid CLI, incomplete package'
+            if(($r.Output+$r.Error) -notmatch $(if($missing -eq 'Entry') {'Entry\.ps1'} else {'Unknown option'})) { throw 'CLI failed for the wrong reason.' }
+        } finally { Stop-OwnedLauncher $run }
     }
     $events.ToArray() | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $proof 'launcher-startup.json') -Encoding UTF8
     Write-Output 'PASS: missing-entry/module GUI failures remain visible; explicit CLI does not pause.'
