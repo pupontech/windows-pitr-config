@@ -122,9 +122,15 @@ try {
                         if($original -and $element.Current.Name -eq 'Applications and data before restore' -and $element.Current.ClassName -eq '#32770') {
                             # Only acknowledge the informational app-impact warning;
                             # never click a recovery/reboot/mutation confirmation.
-                            $okHandle=[PitrLauncherWindowProbe]::GetDlgItem($handle,1)
-                            if($okHandle -ne [IntPtr]::Zero) {
-                                if(-not [PitrLauncherWindowProbe]::PostMessage($okHandle,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)) { throw 'Known informational warning could not be acknowledged.' }
+                            $buttonCondition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button)
+                            $buttons=@($element.FindAll([Windows.Automation.TreeScope]::Descendants,$buttonCondition) | ForEach-Object { $_ })
+                            $okButtons=@($buttons | Where-Object { $_.Current.Name -match '^&?OK$' })
+                            if(-not $warningSeen) {
+                                $buttons | ForEach-Object { [pscustomobject]@{Name=$_.Current.Name;AutomationId=$_.Current.AutomationId;Handle=$_.Current.NativeWindowHandle} } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $proof 'original-warning-buttons.json') -Encoding UTF8
+                            }
+                            if($okButtons.Count -eq 1) {
+                                $null=[PitrLauncherWindowProbe]::SetForegroundWindow($handle)
+                                $okButtons[0].GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
                                 $warningSeen=$true
                             }
                         } elseif($element.Current.Name -eq $expectedTitle) {
@@ -144,7 +150,10 @@ try {
                 Start-Sleep -Milliseconds 200
             }
             $ready=if($original) {$warningSeen -and $statusText -match 'Ready\. Values|This Windows does not have point-in-time restore'} else {$statusText -like 'All discovered profiles selected.*'}
-            if(-not $seenWindow -or -not $ready -or ($original -and $statusText -match 'Error:')) { throw ('No real rendered/startup-ready window within deadline: '+$name+'; '+$statusText) }
+            if(-not $seenWindow -or -not $ready -or ($original -and $statusText -match 'Error:')) {
+                $lastTitle=if($element) {$element.Current.Name} else {'no HWND'}
+                throw ('No real rendered/startup-ready window within deadline: '+$name+'; warningSeen='+$warningSeen+'; title='+$lastTitle+'; status='+$statusText)
+            }
             $null=[PitrLauncherWindowProbe]::SetForegroundWindow($childProcess.MainWindowHandle)
             Start-Sleep -Milliseconds 200
             $rect=$element.Current.BoundingRectangle
