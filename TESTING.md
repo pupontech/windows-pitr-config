@@ -12,6 +12,10 @@ This is a testing build, not a claim that every possible bug or live recovery sc
 
 See **docs/BACKUP-RECOVERY-GUIDE.md** for detailed scope, commands, limitations and manual recovery.
 
+## If the window does not open
+
+Double-click **START-HERE.cmd** without arguments to open Backup and Recovery. `--help` deliberately prints command help instead. Keep the entire extracted `src` folder beside the launcher; running the CMD file alone or directly inside the ZIP is unsupported. A failed no-argument startup now keeps its console open until you press a key, so the actual error can be read. Explicit CLI commands never pause. Copy the visible error text when reporting a startup failure; do not send private backup manifests or filenames unless needed.
+
 ## Warnings are deliberate
 
 - Skipping Backup Before Restore can lose current files/newer changes during rollback. Merely opening the backup window does not prove that a verified backup exists. The main window repeats a warning before Restart to recovery; No opens backup, Cancel stays, and Yes reaches a separate restart confirmation.

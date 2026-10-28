@@ -1,8 +1,11 @@
 # Exercise unmodified CMD -> powershell.exe -STA -> Entry -> actual WPF window.
 # No backup, restore, elevation, registry writes or injected production hooks.
 [CmdletBinding()]
-param([string]$PackageRoot=(Split-Path $PSScriptRoot -Parent))
+param([string]$PackageRoot)
 $ErrorActionPreference='Stop'
+# Windows PowerShell 5.1 -File may evaluate advanced-script defaults before
+# PSScriptRoot is populated. Resolve the default inside the script body.
+if(-not $PackageRoot) { $PackageRoot=Split-Path $PSScriptRoot -Parent }
 if([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     Write-Output 'SKIP: native no-argument CMD/WPF and console failure visibility require Windows.'
     return
@@ -26,6 +29,7 @@ $null=[IO.Directory]::CreateDirectory($hostile)
 $proof=Join-Path $base 'pitr-ui-proof'
 $null=[IO.Directory]::CreateDirectory($proof)
 $events=New-Object 'Collections.Generic.List[object]'
+$events.Add([pscustomobject]@{PackageRoot=$PackageRoot;HarnessEngine=$PSVersionTable.PSVersion.ToString()})
 function Copy-LauncherPackage([string]$From,[string]$To) {
     $null=[IO.Directory]::CreateDirectory($To)
     foreach($name in @('START-HERE.cmd','pitr-backup.cmd')) { [IO.File]::Copy((Join-Path $From $name),(Join-Path $To $name)) }
@@ -50,7 +54,12 @@ function Stop-OwnedLauncher($Run) {
     if(-not $Run.Process.HasExited) {
         # Only descendants of this fixture's exact CMD PID may be terminated.
         foreach($child in @(Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$Run.Process.Id))) {
-            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            $childProcess=$null
+            try { $childProcess=[Diagnostics.Process]::GetProcessById($child.ProcessId) } catch [ArgumentException] { continue }
+            try {
+                if(-not $childProcess.HasExited) { $childProcess.Kill() }
+                if(-not $childProcess.WaitForExit(10000)) { throw 'Fixture child termination was not confirmed; refusing to assume cleanup completed.' }
+            } finally { $childProcess.Dispose() }
         }
         $Run.Process.Kill()
         $null=$Run.Process.WaitForExit(10000)
@@ -113,8 +122,8 @@ try {
             } finally { $graphics.Dispose();$bitmap.Dispose() }
             $events.Add([pscustomobject]@{Launcher=$name;Path=$path;NativeEngine=$childProcess.MainModule.FileName;Window=$element.Current.Name;Status=$statusText;Visible=$true})
             $null=[PitrLauncherWindowProbe]::PostMessage($childProcess.MainWindowHandle,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-            $null=Wait-LauncherExit $run 0 ($name+' ordinary window close')
-            Write-Output ('PASS: actual '+$name+' no arguments -> visible WPF -> profile discovery -> ordinary close, native Windows PowerShell STA.')
+            $null=Wait-LauncherExit $run 0 ($name+' WM_CLOSE shutdown')
+            Write-Output ('PASS: actual '+$name+' no arguments -> visible WPF -> profile discovery -> WM_CLOSE shutdown, native Windows PowerShell STA.')
         } finally { if($childProcess) {$childProcess.Dispose()};Stop-OwnedLauncher $run }
     }
     foreach($missing in @('Entry','Platform')) {
