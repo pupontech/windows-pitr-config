@@ -9,6 +9,12 @@ function Assert-Rejected([string[]]$Tokens) {
     try { $null = ConvertFrom-PitrCommandLine -Tokens $Tokens } catch { $rejected = $true }
     Assert-True $rejected ('Expected rejection: ' + ($Tokens -join ' '))
 }
+$o = ConvertFrom-PitrCommandLine -Tokens @()
+Assert-True ($o.Gui -and -not $o.Help -and $o.Command -eq 'backup' -and $o.Action -eq 'create') 'RED: double-click/no arguments must open the backup window, not print help and exit'
+foreach($helpToken in @('--help','help','-h','/?')) {
+    $helpOptions=ConvertFrom-PitrCommandLine -Tokens @($helpToken)
+    Assert-True ($helpOptions.Help -and -not $helpOptions.Gui) 'Explicit help must remain noninteractive'
+}
 $o = ConvertFrom-PitrCommandLine -Tokens @('backup','--destination','E:\User Backups','--scope','all-users')
 Assert-True ($o.Command -eq 'backup' -and $o.Action -eq 'create') 'backup route'
 Assert-True ($o.Destination -eq 'E:\User Backups' -and $o.Scope -eq 'Complete') 'literal destination and scope'

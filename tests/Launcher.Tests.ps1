@@ -11,6 +11,8 @@ $text=[Text.Encoding]::UTF8.GetString($bytes)
 if($text -match '(?<!\r)\n' -or $text.StartsWith([string][char]0xFEFF,[StringComparison]::Ordinal)) { throw 'Launcher encoding/CRLF violation' }
 if($text -notmatch '-File "%PITR_ENTRY%" %\*') { throw 'Launcher must pass literal native args to -File entrypoint' }
 if($text -match 'Start-Process|RunAs|net session|Invoke-Expression') { throw 'CLI launcher must never elevate or evaluate args' }
+if($text -notmatch '(?im)^setlocal DisableDelayedExpansion\s*$') { throw 'RED: launchers must disable inherited delayed expansion to preserve exclamation marks in paths.' }
+if($text -notmatch '(?im)^pause\s*$' -or $text -notmatch '(?im)^:cli\s*$') { throw 'RED: no-argument GUI startup failures must remain visible, without pausing explicit CLI commands.' }
 if($env:OS -eq 'Windows_NT') {
     & $path --help
     if($LASTEXITCODE -ne 0) { throw 'Actual CMD launcher help failed' }

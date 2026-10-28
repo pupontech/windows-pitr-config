@@ -48,7 +48,7 @@ jobs:
           $artifact=& ./tools/Build-Portable.ps1 -OutDirectory (Join-Path $env:RUNNER_TEMP 'pitr-dist') -SourceCommit $source
           $artifact | ConvertTo-Json | Write-Host
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $expanded=Join-Path $env:RUNNER_TEMP "PITR portable (1) O'Brien"
+          $expanded=Join-Path $env:RUNNER_TEMP "PITR portable (1) O'Brien & A!"
           [IO.Compression.ZipFile]::ExtractToDirectory($artifact.Path,$expanded)
           $inventory=Get-Content -LiteralPath (Join-Path $expanded 'package-integrity.json') -Raw -Encoding UTF8 | ConvertFrom-Json
           if ($inventory.SourceCommit -ne $source) { throw 'ZIP source provenance mismatch' }
@@ -68,6 +68,8 @@ jobs:
           if($LASTEXITCODE -ne 0) { throw 'Extracted portable launcher help failed' }
           & (Join-Path $expanded 'pitr-config.cmd') selftest
           if($LASTEXITCODE -ne 0) { throw 'Extracted original hybrid selftest failed' }
+          & ./tests/LauncherStartupWindows.Tests.ps1 -PackageRoot $expanded
+          if(-not $?) { throw 'Extracted no-argument native CMD/WPF proof failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -8,7 +8,7 @@ function ConvertFrom-PitrCommandLine {
         Mappings=@{}; EntryIds=@(); ProfileSids=@(); CustomPaths=@(); OutputPath=$null
         Help=$false; Resume=$false
     }
-    if ($Tokens.Count -eq 0) { $o.Help=$true; return $o }
+    if ($Tokens.Count -eq 0) { $o.Command='backup'; $o.Action='create'; $o.Gui=$true; return $o }
     if ($Tokens[0] -in @('help','--help','-h','/?')) { $o.Help=$true; return $o }
     $o.Command = $Tokens[0].ToLowerInvariant()
     if ($o.Command -notin @('backup','recover')) { throw 'Expected backup or recover. Use --help.' }
