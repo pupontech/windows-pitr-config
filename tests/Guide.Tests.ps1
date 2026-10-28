@@ -26,6 +26,8 @@ if($text -notmatch 'UAC approval or cancellation on your account' -or $text -not
 # The HTML copy must be self-contained: no scripts, no network assets, real structure.
 if($html -match '<script' -or $html -match '(?i)(src|href)\s*=\s*"(?!#)(https?:)?//') { throw 'Guide HTML must not load scripts or network resources.' }
 foreach($tag in @('<table>','<h2','<pre>','</html>')) { if(-not $html.Contains($tag)) { throw ('Guide HTML is not a complete document: missing '+$tag) } }
+if($html -match '\*\*' -or $html -match '(?<![\w*])\*[A-Za-z][^*<\r\n]{0,40}\*(?![\w*])') { throw 'Guide HTML still shows raw markdown emphasis markers.' }
+foreach($tag in @('<em>','<strong>')) { if(-not $html.Contains($tag)) { throw ('Guide HTML lost inline formatting: missing '+$tag) } }
 foreach($topic in @('Basic use','Advanced use','Combine','Restore points')) { if($html -notmatch [regex]::Escape($topic)) { throw ('Guide HTML omits: '+$topic) } }
 if($html -notmatch 'id="2-basic-use"' -or $html -notmatch 'id="3-advanced-use"') { throw 'Guide HTML anchors for basic/advanced sections are missing.' }
 

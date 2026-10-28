@@ -56,7 +56,7 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
 <h3 id="2-1-back-up-files">2.1 Back up files</h3>
 <ol>
 <li>Open the <strong>Backup</strong> tab.</li>
-<li>Under *Where should the backup be saved?* click <strong>Choose folder...</strong> and pick storage on a <strong>different volume</strong> than Windows and your source data - preferably an external drive. Same-volume destinations are refused. Network shares are allowed but carry connection and independence warnings.</li>
+<li>Under <em>Where should the backup be saved?</em> click <strong>Choose folder...</strong> and pick storage on a <strong>different volume</strong> than Windows and your source data - preferably an external drive. Same-volume destinations are refused. Network shares are allowed but carry connection and independence warnings.</li>
 <li>Leave the folder list alone the first time: every discovered user profile and the Public folder are included by default.</li>
 <li>Click <strong>Start backup</strong>. Verification runs automatically afterwards; you do not need a second step.</li>
 <li>Read the status line:</li>
@@ -83,7 +83,7 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
 <p>The <strong>Restore points</strong> tab shows the original tool's view of the PITR engine:</p>
 <ul>
 <li><strong>Current state</strong> - whether this Windows supports PITR (supported / incomplete / not present), Windows edition, last and next scheduled run, task state, recovery-environment (WinRE) availability, storage used, the oldest point, and the existing restore points with their time, age, status and build.</li>
-<li><strong>Settings</strong> - *Active*, *Frequency*, *Retention* and *Storage limit*, each shown as currently effective together with its source (this tool's policy value, Intune/MDM, the Settings app, or the Windows default).</li>
+<li><strong>Settings</strong> - <em>Active</em>, <em>Frequency</em>, <em>Retention</em> and <em>Storage limit</em>, each shown as currently effective together with its source (this tool's policy value, Intune/MDM, the Settings app, or the Windows default).</li>
 <li><strong>Apply</strong> - save changed settings. They take effect on the next scheduled run, and that run only happens when Windows is idle.</li>
 <li><strong>Apply and run now</strong> - save, then trigger a run immediately.</li>
 <li><strong>Create snapshot now</strong> - ask for a restore point right away without changing settings.</li>
@@ -92,7 +92,7 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
 <li><strong>Restart to recovery</strong> - reboot into WinRE, where a restore point is applied. Unsaved work in other programs is lost. A warning appears first; <strong>No</strong> (default) switches to the Backup tab, <strong>Cancel</strong> stays, and <strong>Yes</strong> reaches a separate restart confirmation.</li>
 </ul>
 <p>The tab also offers ten interface languages, a link to the original author's PITR guide and a project-page link. An update notice appears when a newer release exists; this tool never downloads or installs anything automatically.</p>
-<p>If the tab reports *not present in this Windows*, everything that writes is disabled and the tool is read-only. PITR arrives with Windows updates, so a pending cumulative update can still add it.</p>
+<p>If the tab reports <em>not present in this Windows</em>, everything that writes is disabled and the tool is read-only. PITR arrives with Windows updates, so a pending cumulative update can still add it.</p>
 <hr>
 <h2 id="3-advanced-use">3. Advanced use</h2>
 <h3 id="3-1-backup-scope-and-exclusions">3.1 Backup scope and exclusions</h3>
@@ -105,7 +105,7 @@ footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
 <h3 id="3-3-advanced-restore-controls">3.3 Advanced restore controls</h3>
 <p>Inside <strong>Advanced restore options</strong>:</p>
 <ul>
-<li><strong>Conflict policy</strong> - *Skip* (default: keep the existing file), *Alongside* (write a separate copy), *Replace* (preserve the current bytes first, then replace). Re-preview after changing it.</li>
+<li><strong>Conflict policy</strong> - <em>Skip</em> (default: keep the existing file), <em>Alongside</em> (write a separate copy), <em>Replace</em> (preserve the current bytes first, then replace). Re-preview after changing it.</li>
 <li><strong>Optional alternate recovery folder</strong> - restore into an existing inspection folder instead of the live profile. Preferred for executable or startup content.</li>
 <li><strong>Advanced AppData consent</strong> - required before AppData content can be selected; close applications first.</li>
 <li><strong>Search and classification filter</strong> - narrow the results list (All, Missing, Different, Identical, LikelyIdentical, CurrentOnly, Unknown).</li>
@@ -157,14 +157,14 @@ pitr-config.cmd recover restore --manifest "..." --entry FILE-ID --alternate-roo
 <ul>
 <li>The <strong>At every system start</strong> checkbox registers the startup snapshot task; the adjacent list chooses 1, 2, 5, 10, 15 or 30 minutes after boot.</li>
 <li>The idle-check button reports whether Windows still reaches idle. If it does not, no scheduled point can be created regardless of settings.</li>
-<li>The task-history button enables the Task Scheduler operational log, which is what the *last run* result is read from.</li>
+<li>The task-history button enables the Task Scheduler operational log, which is what the <em>last run</em> result is read from.</li>
 <li><strong>Copy state</strong> produces a plain-text summary suitable for a forum post or bug report.</li>
 </ul>
 <h3 id="3-9-files-in-the-package">3.9 Files in the package</h3>
 <table><thead><tr><th>File / folder</th><th>Purpose</th></tr></thead><tbody><tr><td><code>START-HERE.cmd</code>, <code>pitr-config.cmd</code>, <code>pitr-backup.cmd</code></td><td>Launchers described above.</td></tr><tr><td><code>src\backup\*.ps1</code></td><td>File backup, restore, manifest, platform and UI modules. Required.</td></tr><tr><td><code>docs\BACKUP-RECOVERY-GUIDE.md</code></td><td>Backup/restore reference with CLI detail and limitations.</td></tr><tr><td><code>docs\guide.html</code></td><td>The original author's PITR guide, ten languages, offline copy.</td></tr><tr><td><code>USER-GUIDE.md</code>, <code>USER-GUIDE.html</code></td><td>This guide.</td></tr><tr><td><code>README.md</code>, <code>TESTING.md</code>, <code>CHANGELOG.md</code>, <code>LICENSE</code></td><td>Overview, test instructions, history, MIT licence.</td></tr><tr><td><code>package-integrity.json</code></td><td>SHA-256 inventory of every packaged file.</td></tr></tbody></table>
 <p>There is no installer: delete the extracted folder to remove the tool. Values already written to the PITR policy key remain until you use <strong>Reset everything</strong> (or <code>apply reset</code>), and a registered startup task remains until you switch it off.</p>
 <h3 id="3-10-troubleshooting">3.10 Troubleshooting</h3>
-<table><thead><tr><th>Symptom</th><th>Action</th></tr></thead><tbody><tr><td>Window does not open</td><td>Double-click <code>START-HERE.cmd</code> with no arguments and read the console - it now stays open on failure. Check that <code>pitr-config.cmd</code> and <code>src</code> are beside it.</td></tr><tr><td>"Administrator rights were not granted"</td><td>The tool asked once and stopped. Re-run and accept the UAC prompt.</td></tr><tr><td>Settings show "not present in this Windows"</td><td>This build lacks PITR. Everything that writes is disabled; a pending Windows update may still add it.</td></tr><tr><td>No restore points are created</td><td>Check *Current state*: task state, next run, WinRE and idle. Run <code>pitr-config.cmd idle</code> from an elevated prompt.</td></tr><tr><td>Backup refuses the destination</td><td>Choose storage on a different physical volume, not a nested folder, not the Windows drive.</td></tr><tr><td>Restore folder suggestion is blank</td><td>Enter the correct current folder manually and tick the approval box. Exact account identity cannot be inferred.</td></tr><tr><td>Restore refused after changing something</td><td>Preview again; the previous preview no longer matches your selection.</td></tr><tr><td>Which build am I running?</td><td>The window subtitle shows the version; <code>pitr-config.cmd apply status</code> prints it too.</td></tr></tbody></table>
+<table><thead><tr><th>Symptom</th><th>Action</th></tr></thead><tbody><tr><td>Window does not open</td><td>Double-click <code>START-HERE.cmd</code> with no arguments and read the console - it now stays open on failure. Check that <code>pitr-config.cmd</code> and <code>src</code> are beside it.</td></tr><tr><td>"Administrator rights were not granted"</td><td>The tool asked once and stopped. Re-run and accept the UAC prompt.</td></tr><tr><td>Settings show "not present in this Windows"</td><td>This build lacks PITR. Everything that writes is disabled; a pending Windows update may still add it.</td></tr><tr><td>No restore points are created</td><td>Check <em>Current state</em>: task state, next run, WinRE and idle. Run <code>pitr-config.cmd idle</code> from an elevated prompt.</td></tr><tr><td>Backup refuses the destination</td><td>Choose storage on a different physical volume, not a nested folder, not the Windows drive.</td></tr><tr><td>Restore folder suggestion is blank</td><td>Enter the correct current folder manually and tick the approval box. Exact account identity cannot be inferred.</td></tr><tr><td>Restore refused after changing something</td><td>Preview again; the previous preview no longer matches your selection.</td></tr><tr><td>Which build am I running?</td><td>The window subtitle shows the version; <code>pitr-config.cmd apply status</code> prints it too.</td></tr></tbody></table>
 <hr>
 <h2 id="4-limits-of-this-testing-build">4. Limits of this testing build</h2>
 <p>Verified by automated Windows 2022/2025 runs with Windows PowerShell 5.1 and PowerShell 7: source parsing, the behaviour suites, real WPF composition of the three tabs, a synthetic end-to-end backup/preview/confirmed-restore cycle, native launcher startup, and package integrity. That is not proof of the following, which remain your own test gates:</p>
