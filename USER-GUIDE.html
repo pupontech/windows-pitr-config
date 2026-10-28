@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Windows PITR + Backup and Restore - User Guide</title>
+<style>
+:root { color-scheme: light dark; --fg:#1b1f24; --muted:#5b6572; --bg:#ffffff; --panel:#f5f7fa; --line:#d8dee6; --accent:#0b5cad; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e7ecf2; --muted:#a6b1bf; --bg:#14181d; --panel:#1b2028; --line:#2b3440; --accent:#6cb6ff; } }
+* { box-sizing: border-box; }
+body { margin:0 auto; max-width: 54rem; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--fg);
+       font: 16px/1.58 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; }
+h1 { font-size: 1.85rem; line-height:1.25; margin: 0 0 .4rem; }
+h2 { font-size: 1.3rem; margin: 2.4rem 0 .6rem; padding-top: .7rem; border-top: 1px solid var(--line); }
+h3 { font-size: 1.06rem; margin: 1.6rem 0 .4rem; }
+p, li { max-width: 46rem; }
+a { color: var(--accent); }
+code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: .05em .3em; font-size: .92em; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; overflow-x: auto; }
+pre code { border: 0; padding: 0; background: none; }
+table { border-collapse: collapse; width: 100%; margin: .8rem 0 1.2rem; font-size: .95rem; }
+th, td { text-align: left; vertical-align: top; padding: .45rem .6rem; border: 1px solid var(--line); }
+th { background: var(--panel); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+nav { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1.1rem; margin: 1.4rem 0 2rem; }
+nav p { margin: 0 0 .3rem; color: var(--muted); font-size: .85rem; letter-spacing: .04em; text-transform: uppercase; }
+nav ul { margin: 0; padding-left: 1.1rem; columns: 2; column-gap: 1.5rem; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+@media print { body { max-width: none; padding: 0; } nav { break-inside: avoid; } h2 { break-after: avoid; } pre, table { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<nav><p>Contents</p><ul><li><a href="#1-start-here">. Start here</a></li><li><a href="#2-basic-use">. Basic use</a></li><li><a href="#3-advanced-use">. Advanced use</a></li><li><a href="#4-limits-of-this-testing-build">. Limits of this testing build</a></li></ul></nav>
+<h1 id="windows-pitr-backup-and-restore-user-guide">Windows PITR + Backup and Restore - User Guide</h1>
+<p>Version 1.9.0-test.8 (testing build). This guide ships inside the ZIP as <code>USER-GUIDE.md</code> and <code>USER-GUIDE.html</code>.</p>
+<p>Point-in-time restore (PITR) is a Windows feature that keeps snapshots of the system drive so you can roll back after a bad update, driver or app change. This tool configures it and adds a separate file backup/restore workflow so you can keep current files before a rollback and bring selected files back afterwards.</p>
+<p>Nothing here replaces a tested independent backup. Start with disposable data.</p>
+<hr>
+<h2 id="1-start-here">1. Start here</h2>
+<ol>
+<li><strong>Extract the whole ZIP</strong> to a normal local folder. Keep <code>START-HERE.cmd</code>, <code>pitr-config.cmd</code>, <code>pitr-backup.cmd</code> and the <code>src</code> folder together. Running a launcher from inside the ZIP or without <code>src</code> will fail.</li>
+<li><strong>Double-click <code>START-HERE.cmd</code>.</strong> Windows asks for administrator rights once, because the window contains the Windows PITR configuration. Accept it.</li>
+<li>You get <strong>one window with three tabs</strong>:</li>
+</ol>
+<ul>
+<li><strong>Backup</strong> - save current files to separate storage.</li>
+<li><strong>Restore files</strong> - bring selected files back from a saved backup.</li>
+<li><strong>Restore points</strong> - the original Windows PITR configuration and recovery actions.</li>
+</ul>
+<p>Switching tabs never starts an operation and never grants permission: entering a path, opening a tab or closing the window does not prove a backup exists, does not approve a restore and does not authorize a reboot.</p>
+<p><strong>Other ways to start</strong></p>
+<table><thead><tr><th>Launcher</th><th>What it does</th></tr></thead><tbody><tr><td><code>START-HERE.cmd</code></td><td>Combined three-tab application (asks for admin once).</td></tr><tr><td><code>pitr-config.cmd</code></td><td>Same combined application. Also the command-line entry point.</td></tr><tr><td><code>pitr-backup.cmd</code></td><td>Optional standalone file backup/restore window. Does <strong>not</strong> elevate.</td></tr><tr><td><code>recovery\Start-Recovery.cmd</code> (inside each backup)</td><td>Independent recovery launcher for that backup.</td></tr></tbody></table>
+<p><strong>Safety in one paragraph.</strong> A rollback can remove or revert apps, drivers and updates installed since the restore point, and you may have to reinstall them. A file backup is a live copy, not an application-consistent image: close apps, expect open databases and mail stores to be inconsistent, and keep BitLocker keys and recovery media somewhere else. Do not use this tool as your only backup.</p>
+<hr>
+<h2 id="2-basic-use">2. Basic use</h2>
+<h3 id="2-1-back-up-files">2.1 Back up files</h3>
+<ol>
+<li>Open the <strong>Backup</strong> tab.</li>
+<li>Under *Where should the backup be saved?* click <strong>Choose folder...</strong> and pick storage on a <strong>different volume</strong> than Windows and your source data - preferably an external drive. Same-volume destinations are refused. Network shares are allowed but carry connection and independence warnings.</li>
+<li>Leave the folder list alone the first time: every discovered user profile and the Public folder are included by default.</li>
+<li>Click <strong>Start backup</strong>. Verification runs automatically afterwards; you do not need a second step.</li>
+<li>Read the status line:</li>
+</ol>
+<ul>
+<li><strong>Backup verified</strong> - copied bytes match the recorded hashes.</li>
+<li><strong>Backup finished with problems</strong> / <strong>cancelled</strong> - some files may not be protected. Click <strong>View details</strong> and read every skip and error.</li>
+</ul>
+<ol>
+<li>Keep the whole generated backup folder, including its <code>recovery</code> subfolder. Ordinary files are still readable in Explorer without this tool.</li>
+</ol>
+<p>"Verified" means the copy is internally consistent. It does <strong>not</strong> mean applications are consistent, and it does not prove PITR readiness.</p>
+<h3 id="2-2-restore-files">2.2 Restore files</h3>
+<ol>
+<li>Open the <strong>Restore files</strong> tab and click <strong>Choose backup folder...</strong>. Choose the dated backup generation folder - the one containing <code>manifest.json</code>, not its parent and not the <code>recovery</code> folder.</li>
+<li>The tool checks the backup, then suggests a current folder for each backed-up source. Suggestions require an <strong>exact Windows account identity (SID)</strong> match; names and old paths are not used as identity proof.</li>
+<li>Check the two-column table. If a row is blank, type the correct current folder. Tick <strong>These are the correct folders for these users</strong>.</li>
+<li>Click <strong>Find missing files</strong>. Missing ordinary personal files are selected automatically; AppData, scripts and technical rows are not.</li>
+<li>Click <strong>Preview restore</strong>. Nothing is written; the preview proves exactly which files would change.</li>
+<li>Review <strong>View details</strong>, then click <strong>Restore selected files</strong> and confirm the dialog. The confirmation defaults to <strong>No</strong>. Existing files are kept by default.</li>
+</ol>
+<p>Changing the selection, mappings, conflict policy, alternate folder or advanced consent invalidates the preview - preview again before restoring.</p>
+<h3 id="2-3-restore-points-the-windows-feature">2.3 Restore points (the Windows feature)</h3>
+<p>The <strong>Restore points</strong> tab shows the original tool's view of the PITR engine:</p>
+<ul>
+<li><strong>Current state</strong> - whether this Windows supports PITR (supported / incomplete / not present), Windows edition, last and next scheduled run, task state, recovery-environment (WinRE) availability, storage used, the oldest point, and the existing restore points with their time, age, status and build.</li>
+<li><strong>Settings</strong> - *Active*, *Frequency*, *Retention* and *Storage limit*, each shown as currently effective together with its source (this tool's policy value, Intune/MDM, the Settings app, or the Windows default).</li>
+<li><strong>Apply</strong> - save changed settings. They take effect on the next scheduled run, and that run only happens when Windows is idle.</li>
+<li><strong>Apply and run now</strong> - save, then trigger a run immediately.</li>
+<li><strong>Create snapshot now</strong> - ask for a restore point right away without changing settings.</li>
+<li><strong>Reset everything</strong> - remove every value this tool wrote and return to the Windows default.</li>
+<li><strong>Copy state</strong> - copy edition, settings with sources, task status and restore points as plain text, for a bug report.</li>
+<li><strong>Restart to recovery</strong> - reboot into WinRE, where a restore point is applied. Unsaved work in other programs is lost. A warning appears first; <strong>No</strong> (default) switches to the Backup tab, <strong>Cancel</strong> stays, and <strong>Yes</strong> reaches a separate restart confirmation.</li>
+</ul>
+<p>The tab also offers ten interface languages, a link to the original author's PITR guide and a project-page link. An update notice appears when a newer release exists; this tool never downloads or installs anything automatically.</p>
+<p>If the tab reports *not present in this Windows*, everything that writes is disabled and the tool is read-only. PITR arrives with Windows updates, so a pending cumulative update can still add it.</p>
+<hr>
+<h2 id="3-advanced-use">3. Advanced use</h2>
+<h3 id="3-1-backup-scope-and-exclusions">3.1 Backup scope and exclusions</h3>
+<p>Under <strong>Change folders</strong> you can click a selected user folder to exclude it. Unreadable registrations stay included and block backup until resolved or explicitly excluded; excluding every profile prevents a Complete or Personal backup rather than silently re-selecting them.</p>
+<p>Under <strong>Advanced backup options</strong>:</p>
+<table><thead><tr><th>Scope</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Complete</strong></td><td>Entire profile trees of discovered ProfileList profiles plus Public, including hidden content and AppData where readable.</td></tr><tr><td><strong>Personal</strong></td><td>Existing conventional personal folders: Desktop, Documents, Downloads, Pictures, Videos, Music, Favorites, Saved Games. Not a guarantee for redirected or cloud-managed content.</td></tr><tr><td><strong>Custom</strong></td><td>Only the absolute paths you list, one per line.</td></tr></tbody></table>
+<p>Redirected folders, OneDrive/cloud placeholders, EFS-encrypted files, alternate data streams, long paths and inaccessible files are reported per item rather than silently skipped. Review those warnings: the strongest success state is refused while any item is skipped, changed or unknown.</p>
+<h3 id="3-2-backup-destination-rules">3.2 Backup destination rules</h3>
+<p>A destination must pass volume identity, writeability, source-overlap and capacity checks. The Windows volume, a nested source, and aliases of either are refused. UNC/network destinations are classified as network with connection and physical-independence caveats. No credentials are stored. Every backup is a unique generation; existing generations are never overwritten.</p>
+<h3 id="3-3-advanced-restore-controls">3.3 Advanced restore controls</h3>
+<p>Inside <strong>Advanced restore options</strong>:</p>
+<ul>
+<li><strong>Conflict policy</strong> - *Skip* (default: keep the existing file), *Alongside* (write a separate copy), *Replace* (preserve the current bytes first, then replace). Re-preview after changing it.</li>
+<li><strong>Optional alternate recovery folder</strong> - restore into an existing inspection folder instead of the live profile. Preferred for executable or startup content.</li>
+<li><strong>Advanced AppData consent</strong> - required before AppData content can be selected; close applications first.</li>
+<li><strong>Search and classification filter</strong> - narrow the results list (All, Missing, Different, Identical, LikelyIdentical, CurrentOnly, Unknown).</li>
+<li><strong>Open manifest...</strong>, <strong>Check backup again</strong>, <strong>Reload folders</strong>, <strong>Compare all files</strong> - direct manifest work, re-verification, refreshed SID suggestions, and full comparison instead of the missing-files shortlist.</li>
+</ul>
+<p>Restoring into a live profile is refused for sensitive startup targets. A comparison result is an observed difference; it is never proof that PITR caused it.</p>
+<h3 id="3-4-reports-and-privacy">3.4 Reports and privacy</h3>
+<p><strong>Details and reports</strong> holds the running status plus <strong>Save report</strong> in JSON, CSV or text. Reports contain private filenames and paths - keep them local and review before sharing. No credentials are saved and nothing is uploaded. The CLI emits warnings on stderr so JSON stays parseable.</p>
+<h3 id="3-5-command-line-windows-pitr-configuration">3.5 Command line - Windows PITR configuration</h3>
+<p>Run from an elevated prompt. <code>apply</code>, <code>snapshot</code> and <code>autostart</code> need administrator rights and do not self-elevate; without them they exit 5. <code>selftest</code> and <code>idle</code> need no rights and write nothing.</p>
+<pre>pitr-config.cmd selftest
+pitr-config.cmd --help
+pitr-config.cmd apply freq=4h reten=5d size=20g active=on
+pitr-config.cmd apply status
+pitr-config.cmd apply reset
+pitr-config.cmd apply freq=default
+pitr-config.cmd snapshot
+pitr-config.cmd autostart on delay=5m [copy]
+pitr-config.cmd autostart off
+pitr-config.cmd autostart status
+pitr-config.cmd idle
+pitr-config.cmd noupdate</pre>
+<table><thead><tr><th>Option</th><th>Range / meaning</th></tr></thead><tbody><tr><td><code>freq</code></td><td>60m to 24h - interval between restore points.</td></tr><tr><td><code>reten</code></td><td>1d to 7d - lifetime of a restore point.</td></tr><tr><td><code>size</code></td><td>2g to 50g - storage limit for all points together.</td></tr><tr><td><code>active</code></td><td><code>on</code> or <code>off</code> - the feature itself.</td></tr><tr><td><code>reset</code></td><td>Remove every value this tool wrote.</td></tr><tr><td><code>status</code></td><td>Print effective values; writes nothing.</td></tr><tr><td><code>default</code></td><td>As a value (<code>freq=default</code>) removes that single override.</td></tr></tbody></table>
+<p><code>autostart on</code> registers a SYSTEM scheduled task that creates a point a few minutes after every boot, because Windows' own startup request waits for an idle system. <code>delay</code> accepts 1-60 minutes. Add <code>copy</code> when the tool sits on a network share: the task cannot reach your share as SYSTEM, so it copies itself to ProgramData first. <code>autostart status</code> warns when that copy is missing or stale.</p>
+<p><code>idle</code> reports whether Windows ever reaches the idle state every restore point depends on. It returns 2 when the idle state is blocked system-wide, which makes it usable from monitoring. From an unelevated prompt it sees fewer scheduled tasks and says so.</p>
+<p><code>--help</code>, <code>help</code>, <code>-h</code> and <code>/?</code> print usage and exit without opening a window. A bare double-click opens the GUI.</p>
+<h3 id="3-6-command-line-file-backup-and-recovery">3.6 Command line - file backup and recovery</h3>
+<pre>pitr-config.cmd backup --destination "E:\PITR-Backups" --scope all-users
+pitr-config.cmd backup --destination "E:\PITR-Backups" --scope personal --profile SID
+pitr-config.cmd backup --destination "E:\PITR-Backups" --scope custom --folder "C:\Data"
+pitr-config.cmd backup verify --manifest "...\manifest.json" --verification quick|full
+pitr-config.cmd backup resume --manifest "...\manifest.json"
+pitr-config.cmd backup list --destination "E:\PITR-Backups"
+pitr-config.cmd recover --gui --manifest "...\manifest.json"
+pitr-config.cmd recover compare --manifest "..." --mapping "SOURCE-ID=C:\Users\Name" --deep
+pitr-config.cmd recover restore --manifest "..." --mapping "SOURCE-ID=C:\Users\Name" --entry FILE-ID --dry-run
+pitr-config.cmd recover restore --manifest "..." --entry FILE-ID --alternate-root "D:\Inspect" --execute</pre>
+<ul>
+<li><code>--conflict skip|alongside|replace</code> (default <code>skip</code>); <code>replace</code> preserves current bytes.</li>
+<li><code>--allow-advanced</code> permits selected advanced content; prefer <code>--alternate-root</code>.</li>
+<li><code>--format json|text|csv</code> and <code>--output PATH</code> export a local report.</li>
+<li>Restore is a dry run unless <code>--execute</code> is present, and requires explicit <code>--entry</code> selection plus an approved <code>--mapping</code> or <code>--alternate-root</code>.</li>
+<li>Options are single-use except <code>--mapping</code>, <code>--entry</code>, <code>--profile</code> and <code>--folder</code>.</li>
+</ul>
+<p>Exit codes: <code>0</code> complete, <code>2</code> warnings/incomplete, <code>3</code> invalid input or operation failure, <code>4</code> verification failure, <code>5</code> missing explicit recovery authorization or selection.</p>
+<h3 id="3-7-independent-recovery-package">3.7 Independent recovery package</h3>
+<p>Each backup generation contains a <code>recovery</code> folder with <code>Start-Recovery.cmd</code>, a README, the trusted application modules and <code>recovery-integrity.json</code>. Copy the <strong>whole generation</strong> to accessible media; the launcher finds its manifest relative to itself and never depends on a drive letter or a download. The integrity inventory detects accidental corruption, not tampering - it is not a digital signature. If it is missing or damaged, use Explorer or another trusted copy of this application instead.</p>
+<h3 id="3-8-startup-automation-idle-and-task-history">3.8 Startup automation, idle and task history</h3>
+<ul>
+<li>The <strong>At every system start</strong> checkbox registers the startup snapshot task; the adjacent list chooses 1, 2, 5, 10, 15 or 30 minutes after boot.</li>
+<li>The idle-check button reports whether Windows still reaches idle. If it does not, no scheduled point can be created regardless of settings.</li>
+<li>The task-history button enables the Task Scheduler operational log, which is what the *last run* result is read from.</li>
+<li><strong>Copy state</strong> produces a plain-text summary suitable for a forum post or bug report.</li>
+</ul>
+<h3 id="3-9-files-in-the-package">3.9 Files in the package</h3>
+<table><thead><tr><th>File / folder</th><th>Purpose</th></tr></thead><tbody><tr><td><code>START-HERE.cmd</code>, <code>pitr-config.cmd</code>, <code>pitr-backup.cmd</code></td><td>Launchers described above.</td></tr><tr><td><code>src\backup\*.ps1</code></td><td>File backup, restore, manifest, platform and UI modules. Required.</td></tr><tr><td><code>docs\BACKUP-RECOVERY-GUIDE.md</code></td><td>Backup/restore reference with CLI detail and limitations.</td></tr><tr><td><code>docs\guide.html</code></td><td>The original author's PITR guide, ten languages, offline copy.</td></tr><tr><td><code>USER-GUIDE.md</code>, <code>USER-GUIDE.html</code></td><td>This guide.</td></tr><tr><td><code>README.md</code>, <code>TESTING.md</code>, <code>CHANGELOG.md</code>, <code>LICENSE</code></td><td>Overview, test instructions, history, MIT licence.</td></tr><tr><td><code>package-integrity.json</code></td><td>SHA-256 inventory of every packaged file.</td></tr></tbody></table>
+<p>There is no installer: delete the extracted folder to remove the tool. Values already written to the PITR policy key remain until you use <strong>Reset everything</strong> (or <code>apply reset</code>), and a registered startup task remains until you switch it off.</p>
+<h3 id="3-10-troubleshooting">3.10 Troubleshooting</h3>
+<table><thead><tr><th>Symptom</th><th>Action</th></tr></thead><tbody><tr><td>Window does not open</td><td>Double-click <code>START-HERE.cmd</code> with no arguments and read the console - it now stays open on failure. Check that <code>pitr-config.cmd</code> and <code>src</code> are beside it.</td></tr><tr><td>"Administrator rights were not granted"</td><td>The tool asked once and stopped. Re-run and accept the UAC prompt.</td></tr><tr><td>Settings show "not present in this Windows"</td><td>This build lacks PITR. Everything that writes is disabled; a pending Windows update may still add it.</td></tr><tr><td>No restore points are created</td><td>Check *Current state*: task state, next run, WinRE and idle. Run <code>pitr-config.cmd idle</code> from an elevated prompt.</td></tr><tr><td>Backup refuses the destination</td><td>Choose storage on a different physical volume, not a nested folder, not the Windows drive.</td></tr><tr><td>Restore folder suggestion is blank</td><td>Enter the correct current folder manually and tick the approval box. Exact account identity cannot be inferred.</td></tr><tr><td>Restore refused after changing something</td><td>Preview again; the previous preview no longer matches your selection.</td></tr><tr><td>Which build am I running?</td><td>The window subtitle shows the version; <code>pitr-config.cmd apply status</code> prints it too.</td></tr></tbody></table>
+<hr>
+<h2 id="4-limits-of-this-testing-build">4. Limits of this testing build</h2>
+<p>Verified by automated Windows 2022/2025 runs with Windows PowerShell 5.1 and PowerShell 7: source parsing, the behaviour suites, real WPF composition of the three tabs, a synthetic end-to-end backup/preview/confirmed-restore cycle, native launcher startup, and package integrity. That is not proof of the following, which remain your own test gates:</p>
+<ul>
+<li>Real UAC approval or cancellation on your account.</li>
+<li>Live Windows 11 PITR support, snapshot creation, or an actual rollback.</li>
+<li>Physical per-monitor DPI changes (layout is simulated at several logical scales).</li>
+<li>Live applications and locked files, cloud/EFS/NAS sources, disconnects and very large data sets.</li>
+<li>Safety against a hostile process changing paths while the tool runs.</li>
+</ul>
+<p>The Windows PITR configuration values are undocumented by Microsoft and may change in a future release; <strong>Reset everything</strong> always returns to the Windows default. The file workflow does not create VSS snapshots, does not reinstall applications, does not perform the rollback and never reboots; the Restore points tab keeps the original confirmed WinRE restart action.</p>
+<p>Interface languages: the Restore points window is fully translated into English, German, Dutch, French, Spanish, Portuguese, Italian, Polish, Ukrainian and Czech. Backup/Restore primary actions are translated; some explanatory backup text and this guide are English.</p>
+<p>Original PITR Config by Stefan / henmedia. File backup and selective restore additions maintained by pupontech. MIT licence; the original copyright notice is retained. Not affiliated with or endorsed by Microsoft.</p>
+<footer>Windows PITR + Backup and Restore - testing build. This file is self-contained: no scripts, fonts or images are loaded from the network.</footer>
+</body>
+</html>

@@ -2,6 +2,8 @@
 
 **Needs testing.** This version adds file backup and restore to the original PITR tool. Test it with disposable files first and keep an independent backup of anything important.
 
+**Full instructions:** [USER-GUIDE.md](USER-GUIDE.md) - basic and advanced use, all tabs, command line and troubleshooting. A self-contained copy, [USER-GUIDE.html](USER-GUIDE.html), ships in the ZIP.
+
 [Windows verification builds](https://github.com/pupontech/windows-pitr-config/actions/workflows/backup-recovery-ci.yml) · [Historical releases](https://github.com/pupontech/windows-pitr-config/releases)
 
 For the combined three-tab interface, use **1.9.0-test.7** or newer. Download the portable ZIP from a successful matching verification run (`portable-windows-2022-powershell` artifact), or use the exact ZIP supplied with its verification report. Older releases do not contain this repair.

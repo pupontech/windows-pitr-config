@@ -210,7 +210,7 @@ function Show-PitrBackupUi {
         $RestorePointsContent.Content=$null
         $restorePointsTab.Content=$restorePointsBody
         $null=$controls.Tabs.Items.Add($restorePointsTab)
-        $controls.FileCopyNotice.Text='File backup and file restore do not start a Windows rollback. Restore points contains the separate Windows configuration and recovery actions, with their own confirmations. Close applications before live copies; keep BitLocker keys separately.'
+        $controls.FileCopyNotice.Text='File backup and file restore do not start a Windows rollback. Restore points contains the separate Windows configuration and recovery actions, with their own confirmations. Close applications before live copies; keep BitLocker keys separately. Full instructions: USER-GUIDE.html beside the launchers.'
         $window.Tag=@{PitrTabs=$controls.Tabs;PitrControls=$controls;PitrRestorePoints=$restorePointsTab;PitrView=$view}
     }
     $buttons=@('StartBackup','VerifyBackup','LoadMappings','CompareBackup','FindMissing','ChooseBackup','PreviewRecovery','RecoverFiles','BrowseManifest','ExportReport')

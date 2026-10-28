@@ -4,6 +4,12 @@ Notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0-test.8] — user guide testing build
+
+### Added
+- **USER-GUIDE.md** and a self-contained **USER-GUIDE.html** now ship inside the portable ZIP: one concise guide covering every tab, basic and advanced use in separate halves, the command line, the independent recovery package, troubleshooting and the honest test limits.
+- The combined window and README/TESTING point at the guide; the build refuses to package the application without both files.
+
 ## [1.9.0-test.7] — unified-tabs testing build
 
 ### Changed

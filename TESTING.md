@@ -4,7 +4,7 @@ This is a testing build, not a claim that every possible bug or live recovery sc
 
 ## Start here
 
-1. Extract the entire ZIP to a normal local folder. Keep **START-HERE.cmd** and its `src` folder together.
+1. Extract the entire ZIP to a normal local folder. Keep **START-HERE.cmd**, `pitr-config.cmd` and the `src` folder together. Read **USER-GUIDE.md** (or open **USER-GUIDE.html**) first - basic use is the first half, advanced use the second.
 2. **START HERE: double-click START-HERE.cmd** for one window with **Backup**, **Restore files**, and **Restore points** tabs. `pitr-config.cmd` opens the same combined application and requests administrator rights once when needed. Keep all modules together. For optional non-elevating file-only use, `pitr-backup.cmd` remains standalone; never bypass ACLs.
 3. First test with a small disposable Custom folder. Choose a backup destination on a different volume from Windows and your selected source, preferably independent external storage. Same-volume destinations are intentionally refused. Review all skips and errors; success must include full verification, not just copied bytes.
 4. In a disposable copy of your current-data folder, change/delete test files. Select the generated manifest, approve the explicit SourceId mapping, and run deep comparison. Preview selected recovery before Execute. Existing files are kept by default. Replace is explicit and preserves the current version; recovery reports must be inspected.

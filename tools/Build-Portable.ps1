@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $Root=[IO.Path]::GetFullPath($Root)
 if(-not $OutDirectory) { $OutDirectory=Join-Path $Root 'dist' }
 $OutDirectory=[IO.Path]::GetFullPath($OutDirectory)
-$required=@('START-HERE.cmd','pitr-config.cmd','pitr-backup.cmd','LICENSE','README.md','CHANGELOG.md','TESTING.md','docs/BACKUP-RECOVERY-GUIDE.md')
+$required=@('START-HERE.cmd','pitr-config.cmd','pitr-backup.cmd','LICENSE','README.md','CHANGELOG.md','TESTING.md','USER-GUIDE.md','USER-GUIDE.html','docs/BACKUP-RECOVERY-GUIDE.md')
 foreach($name in @('Platform','Manifest','Backup','Recovery','Ui','Localization','Cli','Entry')) { $required += 'src/backup/'+$name+'.ps1' }
 foreach($rel in $required) { if(-not [IO.File]::Exists((Join-Path $Root $rel))) { throw ('Portable application incomplete; missing '+$rel) } }
 $utf8=New-Object Text.UTF8Encoding($false,$true)

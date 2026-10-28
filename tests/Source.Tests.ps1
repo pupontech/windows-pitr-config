@@ -17,7 +17,7 @@ try {
     $null=[IO.Directory]::CreateDirectory((Join-Path $src 'docs'))
     [IO.File]::WriteAllText((Join-Path $src 'TESTING.md'),'testing instructions',$utf8)
     [IO.File]::WriteAllText((Join-Path $src 'docs/BACKUP-RECOVERY-GUIDE.md'),'backup before rollback guide',$utf8)
-    foreach($name in @('START-HERE.cmd','pitr-backup.cmd','LICENSE','README.md','CHANGELOG.md')) { [IO.File]::WriteAllText((Join-Path $src $name),'fixture',$utf8) }
+    foreach($name in @('START-HERE.cmd','pitr-backup.cmd','LICENSE','README.md','CHANGELOG.md','USER-GUIDE.md','USER-GUIDE.html')) { [IO.File]::WriteAllText((Join-Path $src $name),'fixture',$utf8) }
     foreach($name in @('Platform','Manifest','Backup','Recovery','Ui','Localization','Cli','Entry')) { [IO.File]::WriteAllText((Join-Path $src ('src/backup/'+$name+'.ps1')),"# fixture`n",$utf8) }
     $out=Join-Path $fixture 'out'
     $a=& $builder -Root $src -OutDirectory $out
@@ -34,6 +34,7 @@ try {
         if ($null -eq $zip.GetEntry('START-HERE.cmd')) { throw 'RED: obvious START-HERE.cmd launcher missing from portable ZIP.' }
         if ($null -eq $zip.GetEntry('TESTING.md')) { throw 'RED: portable testing instructions missing' }
         if ($null -eq $zip.GetEntry('docs/BACKUP-RECOVERY-GUIDE.md')) { throw 'RED: portable user backup guide missing' }
+        foreach($guideMember in @('USER-GUIDE.md','USER-GUIDE.html')) { if ($null -eq $zip.GetEntry($guideMember)) { throw ('RED: shipped user guide missing from ZIP: '+$guideMember) } }
         if ($null -eq $zip.GetEntry('src/backup/Entry.ps1')) { throw 'Independent engine entry missing' }
         if ($null -eq $zip.GetEntry('package-integrity.json')) { throw 'Integrity inventory missing' }
         $metaReader=New-Object IO.StreamReader($zip.GetEntry('package-integrity.json').Open(),[Text.Encoding]::UTF8)
